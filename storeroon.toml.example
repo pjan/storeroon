@@ -1,0 +1,35 @@
+# storeroon — music collection management toolchain
+# Copy this file and adjust paths to match your environment.
+
+[collection]
+# Absolute path to the root of your FLAC music collection.
+root = "/path/to/your/music"
+
+[database]
+# Path to the SQLite database file. Relative paths are resolved from the
+# working directory; absolute paths are used as-is.
+path = "data/storeroon.db"
+
+[scan]
+# Required Vorbis comment tags — files missing any of these raise a
+# "missing_required_tag" scan issue.
+required_tags = [
+    "TITLE",
+    "ARTIST",
+    "ALBUMARTIST",
+    "ALBUM",
+    "DATE",
+    "TRACKNUMBER",
+]
+
+# SHA-256 checksum calculation during scanning. Disabling speeds up scans
+# but prevents duplicate detection and integrity verification.
+checksums = true
+
+# Number of files to commit in a single database transaction during import.
+# Larger batches are faster; smaller batches give more granular resumability.
+batch_size = 500
+
+[logging]
+# Minimum log level: debug, info, warning, error
+level = "info"

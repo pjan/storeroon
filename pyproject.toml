@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "storeroon"
+version = "0.1.0"
+description = "Tooling for music collection management"
+requires-python = ">=3.12"
+dependencies = [
+    "mutagen>=1.47",
+    "rich>=13.0",
+]
+
+[project.scripts]
+showroon = "storeroon:cli"
+storeroon = "storeroon:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["storeroon*"]
+
+[tool.setuptools.package-data]
+"storeroon.db" = ["*.sql"]
