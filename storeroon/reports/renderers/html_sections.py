@@ -335,6 +335,42 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
 # =========================================================================
 
 
+def _histogram_html(
+    title: str,
+    buckets: list[BucketCount],
+    bar_cls: str | None = None,
+) -> str:
+    """Build an HTML histogram bar chart from BucketCount instances.
+
+    Each bar's height is proportional to its percentage relative to the
+    largest bucket.  Hovering shows a tooltip with count and percentage.
+    """
+    if not buckets:
+        return ""
+    max_pct = max(b.percentage for b in buckets) or 1.0
+    bars: list[str] = []
+    labels: list[str] = []
+    for b in buckets:
+        height_pct = (b.percentage / max_pct * 100.0) if max_pct > 0 else 0
+        cls = f"histogram-bar {bar_cls}" if bar_cls else "histogram-bar"
+        tooltip = f"{fmt_count(b.count)} ({fmt_pct(b.percentage)})"
+        bars.append(
+            f'<div class="{cls}" style="height:{height_pct:.1f}%"'
+            f' title="{b.label}: {tooltip}">'
+            f'<span class="tooltip">{b.label}: {tooltip}</span>'
+            f"</div>"
+        )
+        labels.append(f"<span>{b.label}</span>")
+
+    return (
+        f'<div class="histogram-wrapper">'
+        f"<h4>{title}</h4>"
+        f'<div class="histogram">{"".join(bars)}</div>'
+        f'<div class="histogram-labels">{"".join(labels)}</div>'
+        f"</div>"
+    )
+
+
 def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
@@ -356,17 +392,22 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
         )
     )
 
-    dist_tables = []
+    # Histogram charts for distributions
+    histograms_html = ""
     for label, buckets in [
-        ("Sample Rate Distribution", data.sample_rate_distribution),
-        ("Bit Depth Distribution", data.bit_depth_distribution),
-        ("Channel Distribution", data.channel_distribution),
+        ("Sample Rate", data.sample_rate_distribution),
+        ("Bit Depth", data.bit_depth_distribution),
+        ("Channels", data.channel_distribution),
         ("Approximate Bitrate (kbps)", data.bitrate_distribution),
-        ("File Size Distribution", data.file_size_distribution),
-        ("Track Duration Distribution", data.duration_distribution),
+        ("File Size", data.file_size_distribution),
+        ("Track Duration", data.duration_distribution),
     ]:
-        dist_tables.append(_bucket_table(label, buckets))
-    sections.append(_section("Distributions", tables=dist_tables))
+        histograms_html += _histogram_html(label, buckets)
+
+    if histograms_html:
+        sections.append(
+            _section("Distributions", text_blocks=[_text(histograms_html)])
+        )
 
     if data.duration_outliers:
         outlier_rows: list[list[dict[str, Any]]] = []

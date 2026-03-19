@@ -187,12 +187,73 @@ tbody tr:hover { background: var(--bg-alt); }
   color: var(--dim);
   font-style: italic;
 }
+/* Histogram bar charts */
+.histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 180px;
+  padding: 0;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.histogram-bar {
+  flex: 1;
+  min-width: 0;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+  position: relative;
+  cursor: default;
+  transition: opacity 0.15s;
+}
+.histogram-bar:hover { opacity: 0.8; }
+.histogram-bar .tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--fg);
+  color: var(--bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+.histogram-bar:hover .tooltip { display: block; }
+.histogram-labels {
+  display: flex;
+  gap: 2px;
+}
+.histogram-labels span {
+  flex: 1;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.histogram-wrapper {
+  margin-bottom: 1.5rem;
+}
+.histogram-wrapper h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+.histogram-bar.bar-suspicious { background: var(--red); }
 @media print {
   body { padding: 1rem; font-size: 10pt; }
   h1 { font-size: 14pt; }
   h2 { font-size: 12pt; }
   table { font-size: 8pt; }
   .bar-container { width: 80px; }
+  .histogram { height: 100px; }
 }
 </style>
 </head>
