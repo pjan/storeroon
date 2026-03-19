@@ -26,6 +26,7 @@ from storeroon.reports.models import (
     OverviewFullData,
     ReplayGainFullData,
     TagCoverageFullData,
+    TagCoverageRow,
     TagFormatsFullData,
     TechnicalFullData,
 )
@@ -62,10 +63,12 @@ REPORT_TITLES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _hdr(label: str, align: str | None = None) -> dict[str, Any]:
+def _hdr(label: str, align: str | None = None, cls: str | None = None) -> dict[str, Any]:
     d: dict[str, Any] = {"label": label}
     if align:
         d["align"] = align
+    if cls:
+        d["cls"] = cls
     return d
 
 
@@ -542,9 +545,9 @@ def _coverage_table_rows(
 
 
 _COV_HEADERS = [
-    _hdr("Tag Key"),
-    _hdr("Coverage", "num"),
-    _hdr("Present", "num"),
+    _hdr("Tag Key", cls="cov-col-tag"),
+    _hdr("Coverage", cls="cov-col-coverage"),
+    _hdr("Present", "num", cls="cov-col-present"),
 ]
 
 
@@ -558,6 +561,7 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
         )
     )
 
+    # Coverage tables: required, recommended, other tracked + unknown (tags to strip)
     for group_name, group_data, severity in [
         ("Required Tags", data.required_coverage, "required"),
         ("Recommended Tags", data.recommended_coverage, "recommended"),
@@ -568,6 +572,29 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
             _section(group_name, tables=[_table(None, _COV_HEADERS, rows)])
         )
 
+    # Tags to strip — unknown keys shown with same coverage columns
+    if data.unknown_keys:
+        unk_rows = _coverage_table_rows(
+            [
+                TagCoverageRow(
+                    tag_key=row.tag_key_upper,
+                    present_count=row.file_count,
+                    present_pct=row.coverage_pct,
+                    missing_count=data.total_files - row.file_count,
+                    missing_pct=100.0 - row.coverage_pct,
+                )
+                for row in data.unknown_keys
+            ],
+            severity_threshold="",
+        )
+        sections.append(
+            _section(
+                f"Tags to Strip ({len(data.unknown_keys)})",
+                tables=[_table(None, _COV_HEADERS, unk_rows)],
+            )
+        )
+
+    # Alias consistency
     if data.alias_usage:
         alias_rows: list[list[dict[str, Any]]] = []
         for row in data.alias_usage:
@@ -604,62 +631,40 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
             )
         )
 
-    inv_rows: list[list[dict[str, Any]]] = []
+    # Full tag key inventory — collapsible, rendered as raw HTML
+    inv_table_rows: list[str] = []
     for row in data.full_inventory:
-        inv_rows.append(
-            [
-                _cell(row.tag_key_upper, cls="mono"),
-                _cell(fmt_count(row.file_count), cls="num"),
-                _cell(fmt_pct(row.coverage_pct), cls="num"),
-                _cell(row.classification, cls=f"tag-{row.classification}"),
-            ]
+        cls = f"tag-{row.classification}"
+        bar_pct = min(max(row.coverage_pct, 0.0), 100.0)
+        inv_table_rows.append(
+            f"<tr>"
+            f'<td class="{cls}">{row.classification}</td>'
+            f'<td class="mono">{row.tag_key_upper}</td>'
+            f'<td class="cov-col-coverage">'
+            f'<span class="bar-container"><span class="bar-fill bar-green" style="width:{bar_pct:.1f}%"></span></span>'
+            f"{fmt_pct(row.coverage_pct)}</td>"
+            f'<td class="num">{fmt_count(row.file_count)}</td>'
+            f"</tr>"
         )
-    sections.append(
-        _section(
-            "Full Tag Key Inventory",
-            tables=[
-                _table(
-                    None,
-                    [
-                        _hdr("Tag Key"),
-                        _hdr("File Count", "num"),
-                        _hdr("Coverage %", "num"),
-                        _hdr("Classification"),
-                    ],
-                    inv_rows,
-                )
-            ],
-        )
+    inv_html = (
+        f'<details style="margin-top:1rem">'
+        f'<summary style="cursor:pointer;font-size:1.1rem;font-weight:600;padding:0.5rem 0">'
+        f"Full Tag Key Inventory ({len(data.full_inventory)} tags)"
+        f"</summary>"
+        f'<table style="width:100%;border-collapse:collapse;margin-top:0.5rem">'
+        f"<thead><tr>"
+        f"<th>Classification</th>"
+        f"<th>Tag Key</th>"
+        f'<th class="cov-col-coverage">Coverage</th>'
+        f'<th class="num">Present</th>'
+        f"</tr></thead>"
+        f'<tbody>{"".join(inv_table_rows)}</tbody>'
+        f"</table>"
+        f"</details>"
     )
-
-    if data.unknown_keys:
-        unk_rows: list[list[dict[str, Any]]] = []
-        for row in data.unknown_keys:
-            note = " \u26a0 <0.1%" if row.coverage_pct < 0.1 else ""
-            unk_rows.append(
-                [
-                    _cell(row.tag_key_upper, cls="mono severity-error"),
-                    _cell(fmt_count(row.file_count), cls="num"),
-                    _cell(fmt_pct(row.coverage_pct) + note, cls="num"),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Unknown Keys ({len(data.unknown_keys)} \u2014 stripping candidates)",
-                note="Review these keys and add to [tags.strip] in your config to remove them in Phase 4.",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("Tag Key"),
-                            _hdr("File Count", "num"),
-                            _hdr("Coverage %", "num"),
-                        ],
-                        unk_rows,
-                    )
-                ],
-            )
-        )
+    sections.append(
+        _section("", text_blocks=[_text(inv_html)])
+    )
 
     return sections
 

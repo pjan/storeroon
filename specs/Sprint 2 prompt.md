@@ -689,3 +689,31 @@ Post-write verification pass, checksum validator, inbox watcher / new album proc
 10. **`duration_seconds` precision matters.** Store as `REAL` in SQLite (IEEE 754 double, ~15 significant digits). Both AcoustID and LRCLIB use duration as a disambiguation signal and are sensitive to rounding — do not cast to integer or truncate when reading from mutagen.
 
 11. **Album boundaries in reporting use directory path, not tag values.** When grouping tracks into albums for consistency or numbering checks, use the parent directory path of the FLAC file, not the `ALBUMARTIST + ALBUM` tag combination. Tag-based grouping conflates distinct releases (e.g. original and remaster) that share album name and artist but are different directories.
+
+
+    "COMPOSER",
+    "LYRICIST",
+    "CONDUCTOR",
+    "PERFORMER",
+    "ENSEMBLE",
+    "OPUS",
+    "PART",
+    "MOVEMENT",
+    "WORK",
+    "SUBTITLE",
+    "GROUPING",
+    "MOOD",
+    "BPM",
+    "KEY",
+    "LANGUAGE",
+    "SCRIPT",
+    "REPLAYGAIN_REFERENCE_LOUDNESS",
+    "ACCURATERIPCRC",
+    "ACCURATERIPCOUNT",
+    "ACCURATERIPRESULT",
+    "ACCURATERIPDISCID",
+    "ENCODEDBY",
+    "ENCODING",
+    "ENCODERSETTINGS",
+    "SOURCE",
+    "SOURCEMEDIA",

@@ -120,6 +120,7 @@ tbody tr:hover { background: var(--bg-alt); }
 .tag-standard_optional { color: var(--dim); }
 .tag-strip { color: var(--red); }
 .tag-unknown { color: var(--red); font-weight: bold; }
+/* Coverage bar — block-level, sits above the percentage text */
 .bar-container {
   display: block;
   width: 100%;
@@ -127,18 +128,28 @@ tbody tr:hover { background: var(--bg-alt); }
   background: var(--bg-alt);
   border-radius: 4px;
   overflow: hidden;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.25rem;
 }
 .bar-fill {
   display: block;
   height: 100%;
-  background: var(--accent);
   border-radius: 4px;
   min-width: 2px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, white));
 }
-.bar-fill.bar-red { background: var(--red); }
-.bar-fill.bar-yellow { background: var(--yellow); }
-.bar-fill.bar-green { background: var(--green); }
+.bar-fill.bar-red {
+  background: linear-gradient(90deg, var(--red), color-mix(in srgb, var(--red) 70%, white));
+}
+.bar-fill.bar-yellow {
+  background: linear-gradient(90deg, var(--yellow), color-mix(in srgb, var(--yellow) 70%, white));
+}
+.bar-fill.bar-green {
+  background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 70%, white));
+}
+/* Fixed column widths for coverage tables */
+.cov-col-tag { width: 40%; }
+.cov-col-coverage { width: 40%; }
+.cov-col-present { width: 20%; }
 .flag {
   display: inline-block;
   padding: 0.1rem 0.4rem;
@@ -336,7 +347,7 @@ tbody tr:hover { background: var(--bg-alt); }
 <thead>
 <tr>
   {% for hdr in tbl.headers %}
-  <th{% if hdr.align %} class="{{ hdr.align }}"{% endif %}>{{ hdr.label }}</th>
+  <th{% if hdr.align or hdr.cls %} class="{% if hdr.cls %}{{ hdr.cls }}{% endif %}{% if hdr.align %} {{ hdr.align }}{% endif %}"{% endif %}>{{ hdr.label }}</th>
   {% endfor %}
 </tr>
 </thead>

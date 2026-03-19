@@ -116,9 +116,9 @@ fields = [
 YEAR            = "DATE"
 ORIGINALYEAR    = "ORIGINALDATE"
 "ALBUM ARTIST"  = "ALBUMARTIST"
-TRACKTOTAL      = "TOTALTRACKS"
-DISCTOTAL       = "TOTALDISCS"
-DISCS           = "TOTALDISCS"
+TOTALTRACKS     = "TRACKTOTAL"
+TOTALDISCS      = "DISCTOTAL"
+TOTALDISCS      = "DISCS"
 
 [tags.standard_optional]
 # Legitimate tags that are out of canonical scope but should not be
@@ -140,7 +140,6 @@ fields = [
     "KEY",
     "LANGUAGE",
     "SCRIPT",
-
     "REPLAYGAIN_REFERENCE_LOUDNESS",
     "ACCURATERIPCRC",
     "ACCURATERIPCOUNT",

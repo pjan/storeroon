@@ -431,13 +431,39 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
             )
         console.print(alias_table)
 
+    # Tags to strip (unknown keys).
+    if data.unknown_keys:
+        _subsection_heading(
+            console,
+            f"Tags to Strip ({len(data.unknown_keys)})",
+        )
+        unk_table = Table(show_header=True, header_style="bold")
+        unk_table.add_column("Tag Key", style="red")
+        unk_table.add_column("", min_width=20)
+        unk_table.add_column("Coverage", justify="right")
+        unk_table.add_column("Present", justify="right")
+
+        for row in data.unknown_keys:
+            chart = bar_chart(row.coverage_pct, 100.0, width=20)
+            unk_table.add_row(
+                row.tag_key_upper,
+                f"[red]{chart}[/red]",
+                fmt_pct(row.coverage_pct),
+                fmt_count(row.file_count),
+            )
+        console.print(unk_table)
+
     # Full tag key inventory.
-    _subsection_heading(console, "Full Tag Key Inventory")
+    _subsection_heading(
+        console,
+        f"Full Tag Key Inventory ({len(data.full_inventory)} tags)",
+    )
     inv_table = Table(show_header=True, header_style="bold")
-    inv_table.add_column("Tag Key", style="cyan")
-    inv_table.add_column("File Count", justify="right")
-    inv_table.add_column("Coverage %", justify="right")
     inv_table.add_column("Classification")
+    inv_table.add_column("Tag Key", style="cyan")
+    inv_table.add_column("", min_width=20)
+    inv_table.add_column("Coverage", justify="right")
+    inv_table.add_column("Present", justify="right")
 
     for row in data.full_inventory:
         class_style = {
@@ -450,35 +476,15 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
             "unknown": "bold red",
         }.get(row.classification, "")
 
+        chart = bar_chart(row.coverage_pct, 100.0, width=20)
         inv_table.add_row(
-            row.tag_key_upper,
-            fmt_count(row.file_count),
-            fmt_pct(row.coverage_pct),
             Text(row.classification, style=class_style),
+            row.tag_key_upper,
+            f"[green]{chart}[/green]",
+            fmt_pct(row.coverage_pct),
+            fmt_count(row.file_count),
         )
     console.print(inv_table)
-
-    # Unknown keys.
-    if data.unknown_keys:
-        _subsection_heading(
-            console,
-            f"Unknown Keys ({len(data.unknown_keys)} found — stripping candidates)",
-        )
-        unk_table = Table(show_header=True, header_style="bold red")
-        unk_table.add_column("Tag Key", style="red")
-        unk_table.add_column("File Count", justify="right")
-        unk_table.add_column("Coverage %", justify="right")
-
-        for row in data.unknown_keys:
-            note = " ⚠ <0.1%" if row.coverage_pct < 0.1 else ""
-            unk_table.add_row(
-                row.tag_key_upper,
-                fmt_count(row.file_count),
-                fmt_pct(row.coverage_pct) + note,
-            )
-        console.print(unk_table)
-    else:
-        console.print("[green]No unknown tag keys found.[/green]")
 
 
 def render_tag_coverage_summary(console: Console, data: TagCoverageSummaryData) -> None:
