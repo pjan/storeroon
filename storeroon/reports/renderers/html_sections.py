@@ -718,27 +718,14 @@ def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
     return _section(group.group_name, tables=tables)
 
 
-def _build_id_section(id_section: Any) -> dict[str, Any]:
-    """Build an ID source section (MusicBrainz or Discogs) for the tag quality report."""
-    cov_rows: list[list[dict[str, Any]]] = []
-    for row in id_section.coverage:
-        mal_cls = "severity-error" if row.malformed_count > 0 else ""
-        cov_rows.append([
-            _cell(row.tag_key, cls="mono"),
-            _cell(fmt_count(row.valid_count), cls="num"),
-            _cell(fmt_pct(row.valid_pct), cls="num"),
-            _cell(fmt_count(row.malformed_count), cls=f"num {mal_cls}".strip()),
-            _cell(fmt_pct(row.malformed_pct), cls=f"num {mal_cls}".strip()),
-            _cell(fmt_count(row.absent_count), cls="num"),
-            _cell(fmt_pct(row.absent_pct), cls="num"),
-        ])
-    tables: list[dict[str, Any]] = [
-        _table("Coverage", [
-            _hdr("Tag Key"), _hdr("Valid", "num"), _hdr("Valid %", "num"),
-            _hdr("Malformed", "num"), _hdr("Malformed %", "num"),
-            _hdr("Absent", "num"), _hdr("Absent %", "num"),
-        ], cov_rows)
-    ]
+def _build_id_extras_section(id_section: Any) -> dict[str, Any] | None:
+    """Build partial album / duplicate / backfill sub-section for an ID source.
+
+    Coverage is handled by the group tables. This only renders extra insights.
+    Returns None if there's nothing to show.
+    """
+    tables: list[dict[str, Any]] = []
+    text_blocks: list[dict[str, Any]] = []
 
     if id_section.partial_albums:
         pa_rows: list[list[dict[str, Any]]] = []
@@ -775,7 +762,6 @@ def _build_id_section(id_section: Any) -> dict[str, Any]:
             dup_rows,
         ))
 
-    text_blocks: list[dict[str, Any]] = []
     if id_section.backfill:
         bf = id_section.backfill
         text_blocks.append(_text(
@@ -783,9 +769,12 @@ def _build_id_section(id_section: Any) -> dict[str, Any]:
             f"{fmt_count(bf.distinct_source_ids)} API calls needed. {bf.description}"
         ))
 
+    if not tables and not text_blocks:
+        return None
+
     return _section(
-        f"{id_section.source_name} IDs",
-        tables=tables,
+        f"{id_section.source_name} — Issues",
+        tables=tables or None,
         text_blocks=text_blocks or None,
     )
 
@@ -830,9 +819,11 @@ def build_tag_quality_sections(data: TagQualityFullData) -> list[dict[str, Any]]
         if group.fields:
             sections.append(_build_quality_group_section(group))
 
-    # External ID sections (MusicBrainz, Discogs).
-    sections.append(_build_id_section(data.musicbrainz))
-    sections.append(_build_id_section(data.discogs))
+    # External ID extras (partial albums, duplicates, backfill — coverage is in group tables).
+    for id_section in [data.musicbrainz, data.discogs]:
+        extras = _build_id_extras_section(id_section)
+        if extras:
+            sections.append(extras)
 
     return sections
 

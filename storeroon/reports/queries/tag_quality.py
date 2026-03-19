@@ -639,12 +639,14 @@ def _overall_coverage_pct(
 
 # Tags with specific format validators — only these appear in the quality report.
 _DATE_TAGS = frozenset({"DATE", "ORIGINALDATE"})
-_POSITIVE_INT_TAGS = frozenset({"DISCNUMBER", "DISCTOTAL", "TOTALDISCS"})
-_VALIDATED_TAGS: frozenset[str] = (
-    _DATE_TAGS
-    | _POSITIVE_INT_TAGS
-    | {"TRACKNUMBER", "ISRC"}
-)
+_POSITIVE_INT_TAGS = frozenset({"TRACKTOTAL", "DISCNUMBER", "DISCTOTAL", "TOTALDISCS"})
+_UUID_TAGS = frozenset({
+    "MUSICBRAINZ_TRACKID", "MUSICBRAINZ_RELEASETRACKID", "MUSICBRAINZ_ALBUMID",
+    "MUSICBRAINZ_ARTISTID", "MUSICBRAINZ_ALBUMARTISTID", "MUSICBRAINZ_RELEASEGROUPID",
+})
+_DISCOGS_ID_TAGS = frozenset({
+    "DISCOGS_RELEASE_ID", "DISCOGS_ARTIST_ID", "DISCOGS_MASTER_ID", "DISCOGS_LABEL_ID",
+})
 
 
 def _analyse_tag(
@@ -669,6 +671,10 @@ def _analyse_tag(
         return _analyse_field(conn, key, total_files, _validate_positive_int, artist_filter=artist_filter)
     if key == "ISRC":
         return _analyse_isrc(conn, total_files, artist_filter=artist_filter)
+    if key in _UUID_TAGS:
+        return _analyse_field(conn, key, total_files, is_valid_uuid, artist_filter=artist_filter)
+    if key in _DISCOGS_ID_TAGS:
+        return _analyse_field(conn, key, total_files, is_valid_discogs_id, artist_filter=artist_filter)
     return None
 
 

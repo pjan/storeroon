@@ -593,45 +593,19 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
                     iv_table.add_row(iv.value, fmt_count(iv.count))
                 console.print(iv_table)
 
-    # ── MusicBrainz & Discogs ID sections ──
+    # ── MusicBrainz & Discogs ID extras (partial, duplicates, backfill) ──
     for section in [data.musicbrainz, data.discogs]:
-        _subsection_heading(console, f"{section.source_name} IDs")
+        has_extras = section.partial_albums or section.duplicate_ids or section.backfill
+        if not has_extras:
+            continue
 
-        # Coverage table.
-        cov_table = Table(
-            title=f"{section.source_name} Coverage",
-            show_header=True,
-            header_style="bold",
-        )
-        cov_table.add_column("Tag Key", style="cyan")
-        cov_table.add_column("Valid", justify="right")
-        cov_table.add_column("Valid %", justify="right")
-        cov_table.add_column("Malformed", justify="right")
-        cov_table.add_column("Malformed %", justify="right")
-        cov_table.add_column("Absent", justify="right")
-        cov_table.add_column("Absent %", justify="right")
+        _subsection_heading(console, f"{section.source_name} — Issues")
 
-        for row in section.coverage:
-            mal_style = "red" if row.malformed_count > 0 else ""
-            cov_table.add_row(
-                row.tag_key,
-                fmt_count(row.valid_count),
-                fmt_pct(row.valid_pct),
-                Text(fmt_count(row.malformed_count), style=mal_style),
-                Text(fmt_pct(row.malformed_pct), style=mal_style),
-                fmt_count(row.absent_count),
-                fmt_pct(row.absent_pct),
-            )
-        console.print(cov_table)
-
-        # Partial album coverage.
         if section.partial_albums:
-            _subsection_heading(
-                console,
-                f"{section.source_name} — Partial Album Coverage "
-                f"({len(section.partial_albums)} albums)",
+            pa_table = Table(
+                title=f"Partial Album Coverage ({len(section.partial_albums)} albums)",
+                show_header=True, header_style="bold",
             )
-            pa_table = Table(show_header=True, header_style="bold")
             pa_table.add_column("Album Directory", style="dim", max_width=60)
             pa_table.add_column("With ID", justify="right")
             pa_table.add_column("Without ID", justify="right")
@@ -639,54 +613,37 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
 
             for pa in section.partial_albums[:30]:
                 pa_table.add_row(
-                    pa.album_dir,
-                    str(pa.tracks_with_id),
-                    str(pa.tracks_without_id),
-                    str(pa.total_tracks),
+                    pa.album_dir, str(pa.tracks_with_id),
+                    str(pa.tracks_without_id), str(pa.total_tracks),
                 )
             if len(section.partial_albums) > 30:
                 console.print(
-                    f"[dim]  … and {len(section.partial_albums) - 30} more "
-                    f"(use --output csv for full list)[/dim]"
+                    f"[dim]  … and {len(section.partial_albums) - 30} more[/dim]"
                 )
             console.print(pa_table)
 
-        # Duplicate IDs.
         if section.duplicate_ids:
-            _subsection_heading(
-                console,
-                f"{section.source_name} — Duplicate IDs "
-                f"({len(section.duplicate_ids)} found)",
+            dup_table = Table(
+                title=f"Duplicate IDs ({len(section.duplicate_ids)} found)",
+                show_header=True, header_style="bold",
             )
-            dup_table = Table(show_header=True, header_style="bold")
             dup_table.add_column("ID Value", max_width=40)
             dup_table.add_column("Files", justify="right")
             dup_table.add_column("Same Dir?")
             dup_table.add_column("Paths", style="dim")
 
             for d in section.duplicate_ids[:20]:
-                same = (
-                    Text("Yes", style="red")
-                    if d.same_directory
-                    else Text("No", style="yellow")
-                )
+                same = Text("Yes", style="red") if d.same_directory else Text("No", style="yellow")
                 paths = "\n".join(d.file_paths[:5])
                 if len(d.file_paths) > 5:
                     paths += f"\n… +{len(d.file_paths) - 5} more"
-                dup_table.add_row(
-                    d.id_value,
-                    str(d.file_count),
-                    same,
-                    paths,
-                )
+                dup_table.add_row(d.id_value, str(d.file_count), same, paths)
             if len(section.duplicate_ids) > 20:
                 console.print(
-                    f"[dim]  … and {len(section.duplicate_ids) - 20} more "
-                    f"(use --output csv for full list)[/dim]"
+                    f"[dim]  … and {len(section.duplicate_ids) - 20} more[/dim]"
                 )
             console.print(dup_table)
 
-        # Backfill candidates.
         if section.backfill:
             bf = section.backfill
             console.print(
