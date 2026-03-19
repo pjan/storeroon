@@ -670,38 +670,23 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
 # =========================================================================
 
 
-_DATE_FIELDS = frozenset({"DATE", "ORIGINALDATE"})
-
-
 def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
     """Build a coverage-style table for a config tag group.
 
     Each row: Tag Key | Valid | Valid% | Invalid | Invalid% | Absent | Absent%
-    Date fields get an extra column with precision breakdown.
+    Only includes tags with format validators.
     """
     headers = [
         _hdr("Tag Key"),
         _hdr("Valid", "num"), _hdr("Valid %", "num"),
         _hdr("Invalid", "num"), _hdr("Invalid %", "num"),
         _hdr("Absent", "num"), _hdr("Absent %", "num"),
-        _hdr("Date Format"),
     ]
 
     rows: list[list[dict[str, Any]]] = []
     for sec in group.fields:
         s = sec.summary
         inv_cls = "severity-error" if s.invalid_count > 0 else ""
-
-        # Date precision summary for date fields.
-        date_info = ""
-        if sec.field_name in _DATE_FIELDS and sec.extra.get("date_precision"):
-            parts: list[str] = []
-            for dp in sec.extra["date_precision"]:
-                if dp.precision == "invalid":
-                    continue
-                label = dp.precision.replace("_", " ")
-                parts.append(f"{label}: {fmt_pct(dp.percentage)}")
-            date_info = "<br>".join(parts)
 
         rows.append([
             _cell(sec.field_name, cls="mono"),
@@ -711,12 +696,11 @@ def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
             _cell(fmt_pct(s.invalid_pct), cls=f"num {inv_cls}".strip()),
             _cell(fmt_count(s.absent_count), cls="num"),
             _cell(fmt_pct(s.absent_pct), cls="num"),
-            _cell(date_info, cls="dim"),
         ])
 
     tables: list[dict[str, Any]] = [_table(None, headers, rows)]
 
-    # Collect invalid values across all fields in the group.
+    # Invalid values per field (only for fields that actually have them).
     for sec in group.fields:
         if sec.invalid_values:
             iv_rows: list[list[dict[str, Any]]] = []
@@ -726,7 +710,7 @@ def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
             if sec.invalid_values_total > len(sec.invalid_values):
                 footer = f"Showing top {len(sec.invalid_values)} of {sec.invalid_values_total} distinct invalid values."
             tables.append(_table(
-                f"Invalid Values — {sec.field_name}",
+                f"Invalid Values \u2014 {sec.field_name}",
                 [_hdr("Value"), _hdr("Count", "num")],
                 iv_rows, footer=footer,
             ))
@@ -815,6 +799,31 @@ def build_tag_quality_sections(data: TagQualityFullData) -> list[dict[str, Any]]
             summary_cards=[_card(fmt_count(data.total_files), "Total Files")],
         )
     )
+
+    # Date format quality table.
+    if data.date_quality:
+        date_rows: list[list[dict[str, Any]]] = []
+        for dq in data.date_quality:
+            inv_cls = "severity-error" if dq.invalid_count > 0 else ""
+            date_rows.append([
+                _cell(dq.field_name, cls="mono"),
+                _cell(fmt_count(dq.full_date_count), cls="num"),
+                _cell(fmt_count(dq.year_only_count), cls="num"),
+                _cell(fmt_count(dq.invalid_count), cls=f"num {inv_cls}".strip()),
+                _cell(fmt_count(dq.missing_count), cls="num"),
+            ])
+        sections.append(
+            _section(
+                "Date Format Quality",
+                tables=[_table(None, [
+                    _hdr("Tag Key"),
+                    _hdr("Full Date", "num"),
+                    _hdr("Year Only", "num"),
+                    _hdr("Invalid", "num"),
+                    _hdr("Missing", "num"),
+                ], date_rows)],
+            )
+        )
 
     # Grouped field validation tables (required, recommended, other).
     for group in data.groups:

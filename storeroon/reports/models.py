@@ -80,15 +80,6 @@ class InvalidValueRow:
     count: int
 
 
-@dataclass(frozen=True, slots=True)
-class DatePrecisionRow:
-    """Distribution of date format precision."""
-
-    precision: str  # "full_date" / "year_month" / "year_only" / "invalid"
-    count: int
-    percentage: float
-
-
 # =========================================================================
 # Report 1 — Collection overview
 # =========================================================================
@@ -273,14 +264,23 @@ class TagCoverageSummaryData:
 
 @dataclass(frozen=True, slots=True)
 class FieldFormatSection:
-    """Validation results for a single field."""
+    """Validation results for a single field with a format validator."""
 
     field_name: str
     summary: FieldValidationRow
     invalid_values: list[InvalidValueRow]
     invalid_values_total: int  # total count if capped at 20
-    # Optional extra distributions (e.g. date precision)
-    extra: dict[str, list[DatePrecisionRow]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class DateQualityRow:
+    """Date format quality for a single date field (DATE or ORIGINALDATE)."""
+
+    field_name: str
+    full_date_count: int
+    year_only_count: int
+    invalid_count: int
+    missing_count: int
 
 
 # =========================================================================
@@ -402,7 +402,8 @@ class TagQualityFullData:
     """Complete data for the tag quality and integrity report."""
 
     total_files: int
-    groups: list[TagGroupQuality]  # grouped by config section
+    date_quality: list[DateQualityRow]  # DATE, ORIGINALDATE precision
+    groups: list[TagGroupQuality]  # grouped by config section (only validated tags)
     musicbrainz: IdSectionData
     discogs: IdSectionData
 

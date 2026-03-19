@@ -24,7 +24,7 @@ from collections.abc import Callable
 from storeroon.config import TagsConfig
 from storeroon.reports.models import (
     BackfillCandidate,
-    DatePrecisionRow,
+    DateQualityRow,
     DuplicateIdEntry,
     FieldFormatSection,
     FieldValidationRow,
@@ -336,47 +336,6 @@ def _analyse_field(
     )
 
 
-def _analyse_date_field(
-    conn: sqlite3.Connection,
-    tag_key: str,
-    total_files: int,
-    *,
-    artist_filter: str | None = None,
-) -> FieldFormatSection:
-    section = _analyse_field(conn, tag_key, total_files, _validate_date, artist_filter=artist_filter)
-
-    if artist_filter:
-        rows = conn.execute(_TAG_VALUES_FILTERED_SQL, (tag_key, artist_filter)).fetchall()
-    else:
-        rows = conn.execute(_TAG_VALUES_SQL, (tag_key,)).fetchall()
-
-    precision_counter: Counter[str] = Counter()
-    seen: set[int] = set()
-    for r in rows:
-        fid = r["file_id"]
-        if fid in seen:
-            continue
-        seen.add(fid)
-        precision_counter[date_precision(r["tag_value"])] += 1
-
-    total_with_tag = sum(precision_counter.values())
-    precision_rows = [
-        DatePrecisionRow(precision=prec, count=cnt, percentage=safe_pct(cnt, total_with_tag))
-        for prec, cnt in sorted(
-            precision_counter.items(),
-            key=lambda x: {"full_date": 0, "year_month": 1, "year_only": 2, "invalid": 3}.get(x[0], 4),
-        )
-    ]
-
-    extra = {"date_precision": precision_rows} if precision_rows else {}
-    return FieldFormatSection(
-        field_name=section.field_name,
-        summary=section.summary,
-        invalid_values=section.invalid_values,
-        invalid_values_total=section.invalid_values_total,
-        extra=extra,
-    )
-
 
 def _analyse_tracknumber(
     conn: sqlite3.Connection, total_files: int, *, artist_filter: str | None = None
@@ -678,11 +637,14 @@ def _overall_coverage_pct(
 # Specialised analysers per tag type
 # ---------------------------------------------------------------------------
 
-# Tags with specific format validators.
+# Tags with specific format validators — only these appear in the quality report.
 _DATE_TAGS = frozenset({"DATE", "ORIGINALDATE"})
 _POSITIVE_INT_TAGS = frozenset({"DISCNUMBER", "DISCTOTAL", "TOTALDISCS"})
-_TRACKNUMBER_TAG = "TRACKNUMBER"
-_ISRC_TAG = "ISRC"
+_VALIDATED_TAGS: frozenset[str] = (
+    _DATE_TAGS
+    | _POSITIVE_INT_TAGS
+    | {"TRACKNUMBER", "ISRC"}
+)
 
 
 def _analyse_tag(
@@ -691,21 +653,63 @@ def _analyse_tag(
     total_files: int,
     *,
     artist_filter: str | None = None,
-) -> FieldFormatSection:
-    """Run the appropriate format validation for a tag key."""
+) -> FieldFormatSection | None:
+    """Run format validation for a tag key, or return None if no validator exists.
+
+    Date tags are excluded — they have their own dedicated table.
+    """
     key = tag_key.upper()
     if key in _DATE_TAGS:
-        return _analyse_date_field(conn, key, total_files, artist_filter=artist_filter)
-    if key == _TRACKNUMBER_TAG:
+        return None  # handled by _build_date_quality
+    if key == "TRACKNUMBER":
         return _analyse_tracknumber(conn, total_files, artist_filter=artist_filter)
     if key == "DISCNUMBER":
         return _analyse_discnumber_cross_check(conn, total_files, artist_filter=artist_filter)
     if key in _POSITIVE_INT_TAGS:
         return _analyse_field(conn, key, total_files, _validate_positive_int, artist_filter=artist_filter)
-    if key == _ISRC_TAG:
+    if key == "ISRC":
         return _analyse_isrc(conn, total_files, artist_filter=artist_filter)
-    # Default: any non-empty string is valid.
-    return _analyse_field(conn, key, total_files, lambda v: bool(v.strip()), artist_filter=artist_filter)
+    return None
+
+
+def _build_date_quality(
+    conn: sqlite3.Connection,
+    total_files: int,
+    *,
+    artist_filter: str | None = None,
+) -> list[DateQualityRow]:
+    """Build date precision rows for DATE and ORIGINALDATE."""
+    result: list[DateQualityRow] = []
+    for tag_key in ("DATE", "ORIGINALDATE"):
+        if artist_filter:
+            rows = conn.execute(_TAG_VALUES_FILTERED_SQL, (tag_key, artist_filter)).fetchall()
+            files_with_tag_rows = conn.execute(
+                _FILES_WITH_TAG_FILTERED_SQL, (tag_key, artist_filter)
+            ).fetchall()
+        else:
+            rows = conn.execute(_TAG_VALUES_SQL, (tag_key,)).fetchall()
+            files_with_tag_rows = conn.execute(_FILES_WITH_TAG_SQL, (tag_key,)).fetchall()
+
+        files_with_tag = {r[0] for r in files_with_tag_rows}
+        missing = max(total_files - len(files_with_tag), 0)
+
+        precision_counts: Counter[str] = Counter()
+        seen: set[int] = set()
+        for r in rows:
+            fid = r["file_id"]
+            if fid in seen:
+                continue
+            seen.add(fid)
+            precision_counts[date_precision(r["tag_value"])] += 1
+
+        result.append(DateQualityRow(
+            field_name=tag_key,
+            full_date_count=precision_counts.get("full_date", 0),
+            year_only_count=precision_counts.get("year_only", 0) + precision_counts.get("year_month", 0),
+            invalid_count=precision_counts.get("invalid", 0),
+            missing_count=missing,
+        ))
+    return result
 
 
 def _analyse_group(
@@ -716,8 +720,12 @@ def _analyse_group(
     *,
     artist_filter: str | None = None,
 ) -> TagGroupQuality:
-    """Analyse all tags in a config group."""
-    fields = [_analyse_tag(conn, key, total_files, artist_filter=artist_filter) for key in keys]
+    """Analyse tags in a config group that have format validators."""
+    fields: list[FieldFormatSection] = []
+    for key in keys:
+        section = _analyse_tag(conn, key, total_files, artist_filter=artist_filter)
+        if section is not None:
+            fields.append(section)
     return TagGroupQuality(group_name=group_name, fields=fields)
 
 
@@ -735,7 +743,10 @@ def full_data(
     """Return the complete dataset for ``report tag-quality``."""
     total_files = _get_total_ok_files(conn, artist_filter)
 
-    # Field format validation grouped by config section.
+    # Date precision table.
+    date_quality = _build_date_quality(conn, total_files, artist_filter=artist_filter)
+
+    # Field format validation grouped by config section (only validated tags, excludes dates).
     groups: list[TagGroupQuality] = [
         _analyse_group(conn, "Required Tags", tags_config.required, total_files, artist_filter=artist_filter),
         _analyse_group(conn, "Recommended Tags", tags_config.recommended, total_files, artist_filter=artist_filter),
@@ -751,6 +762,7 @@ def full_data(
 
     return TagQualityFullData(
         total_files=total_files,
+        date_quality=date_quality,
         groups=groups,
         musicbrainz=mb,
         discogs=discogs,

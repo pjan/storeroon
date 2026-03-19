@@ -529,6 +529,26 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
     _section_heading(console, "Tag Quality & Integrity")
     console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
 
+    # ── Date format quality ──
+    if data.date_quality:
+        _subsection_heading(console, "Date Format Quality")
+        date_table = Table(show_header=True, header_style="bold")
+        date_table.add_column("Tag Key", style="cyan")
+        date_table.add_column("Full Date", justify="right")
+        date_table.add_column("Year Only", justify="right")
+        date_table.add_column("Invalid", justify="right")
+        date_table.add_column("Missing", justify="right")
+        for dq in data.date_quality:
+            inv_style = "red" if dq.invalid_count > 0 else ""
+            date_table.add_row(
+                dq.field_name,
+                fmt_count(dq.full_date_count),
+                fmt_count(dq.year_only_count),
+                Text(fmt_count(dq.invalid_count), style=inv_style),
+                fmt_count(dq.missing_count),
+            )
+        console.print(date_table)
+
     # ── Grouped field validation tables ──
     for group in data.groups:
         if not group.fields:
@@ -543,21 +563,10 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
         table.add_column("Invalid %", justify="right")
         table.add_column("Absent", justify="right")
         table.add_column("Absent %", justify="right")
-        table.add_column("Date Format")
 
         for sec in group.fields:
             s = sec.summary
             inv_style = "red" if s.invalid_count > 0 else ""
-
-            # Date precision info.
-            date_info = ""
-            if sec.field_name in ("DATE", "ORIGINALDATE") and sec.extra.get("date_precision"):
-                parts = [
-                    f"{dp.precision.replace('_', ' ')}: {fmt_pct(dp.percentage)}"
-                    for dp in sec.extra["date_precision"]
-                    if dp.precision != "invalid"
-                ]
-                date_info = ", ".join(parts)
 
             table.add_row(
                 sec.field_name,
@@ -567,7 +576,6 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
                 Text(fmt_pct(s.invalid_pct), style=inv_style),
                 fmt_count(s.absent_count),
                 fmt_pct(s.absent_pct),
-                Text(date_info, style="dim") if date_info else "",
             )
         console.print(table)
 
