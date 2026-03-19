@@ -2,7 +2,8 @@
 storeroon.reports.queries.overview — Report 1: Collection overview.
 
 Aggregate queries against ``files``, ``flac_properties``, and ``raw_tags``.
-Builds a hierarchical breakdown: Artist → Folder type → Release group → Pressing.
+Builds a tag-based hierarchical breakdown:
+    Artist (ALBUMARTIST) → Release type (RELEASETYPE) → Album (ALBUM) → Catalog (CATALOGNUMBER)
 
 Public API:
     full_data(conn) -> OverviewFullData
@@ -15,192 +16,186 @@ import sqlite3
 from collections import defaultdict
 
 from storeroon.reports.models import (
+    AlbumBreakdown,
     ArtistBreakdown,
-    FolderTypeBreakdown,
+    CatalogBreakdown,
     OverviewFullData,
     OverviewSummaryData,
     OverviewTotals,
-    PressingBreakdown,
-    ReleaseGroupBreakdown,
+    ReleaseTypeBreakdown,
 )
 
 # ---------------------------------------------------------------------------
-# Path segment helpers
-# ---------------------------------------------------------------------------
-
-
-def _split_path(path: str) -> tuple[str, str, str, str]:
-    """Split a file path into (artist, folder_type, release_group, pressing).
-
-    Expects: ``artist/folder_type/release_group/pressing/filename.flac``
-    Returns four segment names. Missing segments default to 'Unknown'.
-    """
-    parts = path.split("/")
-    artist = parts[0] if len(parts) > 0 else "Unknown"
-    folder_type = parts[1] if len(parts) > 1 else "Unknown"
-    release_group = parts[2] if len(parts) > 2 else "Unknown"
-    pressing = parts[3] if len(parts) > 3 else "Unknown"
-    return artist, folder_type, release_group, pressing
-
-
-# ---------------------------------------------------------------------------
-# Top-level totals
-# ---------------------------------------------------------------------------
-
-_TOTALS_SQL = """
-SELECT
-    COUNT(*)                                              AS total_tracks,
-    COALESCE(SUM(fp.duration_seconds), 0.0)               AS total_duration,
-    COALESCE(SUM(f.size_bytes), 0)                        AS total_size
-FROM files f
-LEFT JOIN flac_properties fp ON fp.file_id = f.id
-WHERE f.status = 'ok'
-"""
-
-_ALBUM_DIR_EXPR = "SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1)"
-
-_DISTINCT_ARTISTS_SQL = f"""
-SELECT COUNT(DISTINCT SUBSTR(f.path, 1, INSTR(f.path, '/') - 1))
-FROM files f
-WHERE f.status = 'ok'
-"""
-
-_DISTINCT_DISCS_SQL = f"""
-SELECT COUNT(DISTINCT {_ALBUM_DIR_EXPR})
-FROM files f
-WHERE f.status = 'ok'
-"""
-
-
-def _query_totals(conn: sqlite3.Connection) -> OverviewTotals:
-    row = conn.execute(_TOTALS_SQL).fetchone()
-    artists = conn.execute(_DISTINCT_ARTISTS_SQL).fetchone()[0]
-    discs = conn.execute(_DISTINCT_DISCS_SQL).fetchone()[0]
-    return OverviewTotals(
-        total_tracks=row["total_tracks"],
-        total_artists=artists,
-        total_discs=discs,
-        total_duration_seconds=row["total_duration"] or 0.0,
-        total_size_bytes=row["total_size"] or 0,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Hierarchical breakdown: Artist → Folder type → Release group → Pressing
+# Query: one row per file with relevant tag values
 # ---------------------------------------------------------------------------
 
 _FILES_SQL = """
 SELECT
-    f.path,
-    f.filename,
+    f.id,
     f.size_bytes,
     fp.duration_seconds,
-    COALESCE(dn.disc_number, '1') AS disc_number
+    COALESCE(t_aa.tag_value, 'Unknown')         AS albumartist,
+    COALESCE(t_rt.tag_value, 'unknown')          AS releasetype,
+    COALESCE(t_al.tag_value, 'Unknown')          AS album,
+    COALESCE(t_cn.tag_value, 'none')             AS catalognumber,
+    COALESCE(t_td.tag_value, '1')                AS totaldiscs
 FROM files f
 LEFT JOIN flac_properties fp ON fp.file_id = f.id
 LEFT JOIN (
-    SELECT file_id, tag_value AS disc_number
-    FROM raw_tags
-    WHERE tag_key_upper = 'DISCNUMBER'
-      AND tag_index = 0
-) dn ON dn.file_id = f.id
+    SELECT file_id, tag_value FROM raw_tags
+    WHERE tag_key_upper = 'ALBUMARTIST' AND tag_index = 0
+) t_aa ON t_aa.file_id = f.id
+LEFT JOIN (
+    SELECT file_id, tag_value FROM raw_tags
+    WHERE tag_key_upper = 'RELEASETYPE' AND tag_index = 0
+) t_rt ON t_rt.file_id = f.id
+LEFT JOIN (
+    SELECT file_id, tag_value FROM raw_tags
+    WHERE tag_key_upper = 'ALBUM' AND tag_index = 0
+) t_al ON t_al.file_id = f.id
+LEFT JOIN (
+    SELECT file_id, tag_value FROM raw_tags
+    WHERE tag_key_upper = 'CATALOGNUMBER' AND tag_index = 0
+) t_cn ON t_cn.file_id = f.id
+LEFT JOIN (
+    SELECT file_id, tag_value FROM raw_tags
+    WHERE tag_key_upper = 'TOTALDISCS' AND tag_index = 0
+) t_td ON t_td.file_id = f.id
 WHERE f.status = 'ok'
 """
 
 
-def _query_hierarchy(conn: sqlite3.Connection) -> list[ArtistBreakdown]:
-    """Build the full 4-level hierarchy from file paths."""
+def _parse_totaldiscs(value: str) -> int:
+    """Parse TOTALDISCS to an int, defaulting to 1."""
+    try:
+        n = int(value.strip())
+        return max(n, 1)
+    except (ValueError, AttributeError):
+        return 1
+
+
+# ---------------------------------------------------------------------------
+# Hierarchy builder
+# ---------------------------------------------------------------------------
+
+# Key type for catalog-level grouping
+_CatKey = tuple[str, str, str, str]  # (artist, releasetype, album, catalognumber)
+
+
+def _build_hierarchy(conn: sqlite3.Connection) -> tuple[list[ArtistBreakdown], OverviewTotals]:
+    """Build the full 4-level hierarchy from tag values and compute totals."""
     rows = conn.execute(_FILES_SQL).fetchall()
 
-    # Accumulate data per pressing (artist, folder_type, release_group, pressing)
-    # For each pressing, collect: track_count, size, duration, disc_numbers
-    PressKey = tuple[str, str, str, str]  # (artist, folder_type, release_group, pressing)
+    # Accumulate per catalog-number group
+    cat_tracks: dict[_CatKey, int] = defaultdict(int)
+    cat_size: dict[_CatKey, int] = defaultdict(int)
+    cat_duration: dict[_CatKey, float] = defaultdict(float)
+    cat_totaldiscs: dict[_CatKey, int] = {}  # take max TOTALDISCS per catalog
 
-    pressing_tracks: dict[PressKey, int] = defaultdict(int)
-    pressing_size: dict[PressKey, int] = defaultdict(int)
-    pressing_duration: dict[PressKey, float] = defaultdict(float)
-    pressing_discs: dict[PressKey, set[str]] = defaultdict(set)
-    pressing_dirs: dict[PressKey, str] = {}
+    total_tracks = 0
+    total_size = 0
+    total_duration = 0.0
 
     for row in rows:
-        path: str = row["path"]
-        filename: str = row["filename"]
+        artist: str = row["albumartist"] or "Unknown"
+        rtype: str = (row["releasetype"] or "unknown").lower()
+        album: str = row["album"] or "Unknown"
+        catno: str = (row["catalognumber"] or "none").strip() or "none"
+        totaldiscs = _parse_totaldiscs(row["totaldiscs"])
         size: int = row["size_bytes"] or 0
         duration: float = row["duration_seconds"] or 0.0
-        disc_num: str = row["disc_number"] or "1"
 
-        artist, folder_type, release_group, pressing = _split_path(path)
-        key: PressKey = (artist, folder_type, release_group, pressing)
+        key: _CatKey = (artist, rtype, album, catno)
 
-        pressing_tracks[key] += 1
-        pressing_size[key] += size
-        pressing_duration[key] += duration
-        pressing_discs[key].add(disc_num)
+        cat_tracks[key] += 1
+        cat_size[key] += size
+        cat_duration[key] += duration
+        # Keep the maximum TOTALDISCS seen for this catalog group
+        if key not in cat_totaldiscs or totaldiscs > cat_totaldiscs[key]:
+            cat_totaldiscs[key] = totaldiscs
 
-        if key not in pressing_dirs:
-            # album_dir = path without filename
-            album_dir = path[: len(path) - len(filename) - 1] if filename else path
-            pressing_dirs[key] = album_dir
+        total_tracks += 1
+        total_size += size
+        total_duration += duration
 
-    # Build bottom-up: Pressing → ReleaseGroup → FolderType → Artist
+    # Compute totals
+    all_artists: set[str] = set()
+    all_albums: set[tuple[str, str]] = set()  # (artist, album)
+    all_versions: set[_CatKey] = set()
 
-    # Group pressings by (artist, folder_type, release_group)
-    rg_groups: dict[tuple[str, str, str], list[PressingBreakdown]] = defaultdict(list)
-    for key in sorted(pressing_tracks.keys()):
-        artist, folder_type, release_group, pressing_name = key
-        pb = PressingBreakdown(
-            pressing_dir=pressing_dirs.get(key, ""),
-            pressing_name=pressing_name,
-            track_count=pressing_tracks[key],
-            disc_count=len(pressing_discs[key]),
-            total_size_bytes=pressing_size[key],
-            total_duration_seconds=pressing_duration[key],
+    for key in cat_tracks:
+        artist, rtype, album, catno = key
+        all_artists.add(artist)
+        all_albums.add((artist, album))
+        all_versions.add(key)
+
+    totals = OverviewTotals(
+        total_album_artists=len(all_artists),
+        total_albums=len(all_albums),
+        total_versions=len(all_versions),
+        total_tracks=total_tracks,
+        total_duration_seconds=total_duration,
+        total_size_bytes=total_size,
+    )
+
+    # Build bottom-up: Catalog → Album → ReleaseType → Artist
+
+    # Group catalogs by (artist, releasetype, album)
+    album_groups: dict[tuple[str, str, str], list[CatalogBreakdown]] = defaultdict(list)
+    for key in sorted(cat_tracks.keys()):
+        artist, rtype, album, catno = key
+        cb = CatalogBreakdown(
+            catalog_number=catno,
+            track_count=cat_tracks[key],
+            disc_count=cat_totaldiscs.get(key, 1),
+            total_size_bytes=cat_size[key],
+            total_duration_seconds=cat_duration[key],
         )
-        rg_groups[(artist, folder_type, release_group)].append(pb)
+        album_groups[(artist, rtype, album)].append(cb)
 
-    # Group release groups by (artist, folder_type)
-    ft_groups: dict[tuple[str, str], list[ReleaseGroupBreakdown]] = defaultdict(list)
-    for (artist, folder_type, release_group), pressings in sorted(rg_groups.items()):
-        rgb = ReleaseGroupBreakdown(
-            release_group=release_group,
-            track_count=sum(p.track_count for p in pressings),
-            disc_count=sum(p.disc_count for p in pressings),
-            total_size_bytes=sum(p.total_size_bytes for p in pressings),
-            total_duration_seconds=sum(p.total_duration_seconds for p in pressings),
-            pressings=pressings,
+    # Group albums by (artist, releasetype)
+    rtype_groups: dict[tuple[str, str], list[AlbumBreakdown]] = defaultdict(list)
+    for (artist, rtype, album), catalogs in sorted(album_groups.items()):
+        ab = AlbumBreakdown(
+            album=album,
+            track_count=sum(c.track_count for c in catalogs),
+            disc_count=sum(c.disc_count for c in catalogs),
+            total_size_bytes=sum(c.total_size_bytes for c in catalogs),
+            total_duration_seconds=sum(c.total_duration_seconds for c in catalogs),
+            catalogs=catalogs,
         )
-        ft_groups[(artist, folder_type)].append(rgb)
+        rtype_groups[(artist, rtype)].append(ab)
 
-    # Group folder types by artist
-    artist_groups: dict[str, list[FolderTypeBreakdown]] = defaultdict(list)
-    for (artist, folder_type), release_groups in sorted(ft_groups.items()):
-        ftb = FolderTypeBreakdown(
-            folder_type=folder_type,
-            track_count=sum(rg.track_count for rg in release_groups),
-            disc_count=sum(rg.disc_count for rg in release_groups),
-            total_size_bytes=sum(rg.total_size_bytes for rg in release_groups),
-            total_duration_seconds=sum(rg.total_duration_seconds for rg in release_groups),
-            release_groups=release_groups,
+    # Group release types by artist
+    artist_groups: dict[str, list[ReleaseTypeBreakdown]] = defaultdict(list)
+    for (artist, rtype), albums in sorted(rtype_groups.items()):
+        rtb = ReleaseTypeBreakdown(
+            release_type=rtype,
+            track_count=sum(a.track_count for a in albums),
+            disc_count=sum(a.disc_count for a in albums),
+            total_size_bytes=sum(a.total_size_bytes for a in albums),
+            total_duration_seconds=sum(a.total_duration_seconds for a in albums),
+            albums=albums,
         )
-        artist_groups[artist].append(ftb)
+        artist_groups[artist].append(rtb)
 
     # Build final artist list, sorted by track count descending
     result: list[ArtistBreakdown] = []
     for artist in sorted(artist_groups.keys()):
-        fts = artist_groups[artist]
+        rtypes = artist_groups[artist]
         result.append(
             ArtistBreakdown(
                 artist=artist,
-                track_count=sum(ft.track_count for ft in fts),
-                disc_count=sum(ft.disc_count for ft in fts),
-                total_size_bytes=sum(ft.total_size_bytes for ft in fts),
-                total_duration_seconds=sum(ft.total_duration_seconds for ft in fts),
-                folder_types=fts,
+                track_count=sum(rt.track_count for rt in rtypes),
+                disc_count=sum(rt.disc_count for rt in rtypes),
+                total_size_bytes=sum(rt.total_size_bytes for rt in rtypes),
+                total_duration_seconds=sum(rt.total_duration_seconds for rt in rtypes),
+                release_types=rtypes,
             )
         )
 
     result.sort(key=lambda a: a.track_count, reverse=True)
-    return result
+    return result, totals
 
 
 # ---------------------------------------------------------------------------
@@ -210,15 +205,11 @@ def _query_hierarchy(conn: sqlite3.Connection) -> list[ArtistBreakdown]:
 
 def full_data(conn: sqlite3.Connection) -> OverviewFullData:
     """Return the complete dataset for ``report overview``."""
-    totals = _query_totals(conn)
-    by_artist = _query_hierarchy(conn)
-    return OverviewFullData(
-        totals=totals,
-        by_artist=by_artist,
-    )
+    by_artist, totals = _build_hierarchy(conn)
+    return OverviewFullData(totals=totals, by_artist=by_artist)
 
 
 def summary_data(conn: sqlite3.Connection) -> OverviewSummaryData:
     """Return headline metrics only for the ``summary`` command."""
-    totals = _query_totals(conn)
+    _, totals = _build_hierarchy(conn)
     return OverviewSummaryData(totals=totals)

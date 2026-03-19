@@ -97,59 +97,59 @@ class DatePrecisionRow:
 class OverviewTotals:
     """Top-level collection totals."""
 
+    total_album_artists: int  # distinct ALBUMARTIST tag values
+    total_albums: int  # distinct (ALBUMARTIST, ALBUM) pairs
+    total_versions: int  # distinct (ALBUMARTIST, ALBUM, CATALOGNUMBER) tuples
     total_tracks: int
-    total_artists: int  # unique artist path segments
-    total_discs: int  # distinct album_dir paths (pressing folders)
     total_duration_seconds: float
     total_size_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
-class PressingBreakdown:
-    """Innermost level: a specific pressing/catalog folder."""
+class CatalogBreakdown:
+    """Innermost level: a specific catalog number / version of an album."""
 
-    pressing_dir: str  # full album_dir path
-    pressing_name: str  # just the segment 4 folder name
+    catalog_number: str  # CATALOGNUMBER tag value, or "none"
     track_count: int
-    disc_count: int  # distinct DISCNUMBER values within this pressing
+    disc_count: int  # TOTALDISCS tag value (default 1)
     total_size_bytes: int
     total_duration_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
-class ReleaseGroupBreakdown:
-    """A release group (e.g. '1969 - Abbey Road'), may contain multiple pressings."""
+class AlbumBreakdown:
+    """An album, possibly with multiple catalog versions."""
 
-    release_group: str  # segment 3 folder name
+    album: str  # ALBUM tag value
     track_count: int
-    disc_count: int
+    disc_count: int  # sum of catalog disc_counts
     total_size_bytes: int
     total_duration_seconds: float
-    pressings: list[PressingBreakdown]
+    catalogs: list[CatalogBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
-class FolderTypeBreakdown:
-    """A folder type (Albums, EPs, etc.) within an artist."""
+class ReleaseTypeBreakdown:
+    """A release type (album, ep, single, etc.) within an artist."""
 
-    folder_type: str  # segment 2
+    release_type: str  # RELEASETYPE tag value, or "unknown"
     track_count: int
     disc_count: int
     total_size_bytes: int
     total_duration_seconds: float
-    release_groups: list[ReleaseGroupBreakdown]
+    albums: list[AlbumBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
 class ArtistBreakdown:
-    """Top-level: breakdown per artist."""
+    """Top-level: breakdown per album artist."""
 
-    artist: str  # segment 1
+    artist: str  # ALBUMARTIST tag value
     track_count: int
     disc_count: int
     total_size_bytes: int
     total_duration_seconds: float
-    folder_types: list[FolderTypeBreakdown]
+    release_types: list[ReleaseTypeBreakdown]
 
 
 @dataclass(frozen=True, slots=True)

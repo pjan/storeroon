@@ -19,14 +19,11 @@ from storeroon.reports.models import (
     ArtistsFullData,
     BucketCount,
     DuplicatesFullData,
-    FolderTypeBreakdown,
     GenresFullData,
     IdsFullData,
     IssuesFullData,
     LyricsFullData,
     OverviewFullData,
-    PressingBreakdown,
-    ReleaseGroupBreakdown,
     ReplayGainFullData,
     TagCoverageFullData,
     TagFormatsFullData,
@@ -185,8 +182,30 @@ def _hierarchy_row(
     )
 
 
+def _expandable_row(
+    label: str,
+    indent: int,
+    tracks: int,
+    discs: int,
+    size: int,
+    duration: float,
+    children_html: str,
+) -> str:
+    """Build an expandable row: a summary row + a hidden children row."""
+    row = _hierarchy_row(
+        f'<details><summary style="cursor:pointer">{label}</summary></details>',
+        indent, tracks, discs, size, duration,
+    )
+    child_row = (
+        f'<tr class="child-rows" style="display:none"><td colspan="5">'
+        f'<table style="width:100%;border-collapse:collapse">{children_html}</table>'
+        f'</td></tr>'
+    )
+    return row + child_row
+
+
 def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
-    """Build a table with nested <details> for the artist hierarchy."""
+    """Build a table with nested expandable rows for the collection hierarchy."""
     parts: list[str] = [
         '<table style="width:100%;border-collapse:collapse">',
         '<thead><tr>'
@@ -200,60 +219,50 @@ def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
     ]
 
     for a in artists:
-        # Artist row — expandable
-        summary = f'<strong>{a.artist}</strong>'
-        inner: list[str] = []
-        for ft in a.folder_types:
-            # Folder type row — expandable
-            ft_inner: list[str] = []
-            for rg in ft.release_groups:
-                if len(rg.pressings) == 1:
-                    p = rg.pressings[0]
-                    ft_inner.append(_hierarchy_row(
-                        rg.release_group, 3,
-                        p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds,
+        rt_rows: list[str] = []
+        for rt in a.release_types:
+            album_rows: list[str] = []
+            for alb in rt.albums:
+                if len(alb.catalogs) == 1:
+                    # Single version — show flat
+                    album_rows.append(_hierarchy_row(
+                        alb.album, 3,
+                        alb.track_count, alb.disc_count,
+                        alb.total_size_bytes, alb.total_duration_seconds,
                     ))
                 else:
-                    rg_inner: list[str] = []
-                    for p in rg.pressings:
-                        rg_inner.append(_hierarchy_row(
-                            f'<span class="dim">{p.pressing_name}</span>', 4,
-                            p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds,
-                        ))
-                    ft_inner.append(_hierarchy_row(
-                        f'<details><summary style="cursor:pointer">{rg.release_group}</summary></details>', 3,
-                        rg.track_count, rg.disc_count, rg.total_size_bytes, rg.total_duration_seconds,
-                    ))
-                    # Child rows hidden in a details-controlled block
-                    ft_inner.append(
-                        f'<tr class="rg-children" style="display:none"><td colspan="5">'
-                        f'<table style="width:100%;border-collapse:collapse">{"".join(rg_inner)}</table>'
-                        f'</td></tr>'
+                    # Multiple versions — expandable
+                    cat_rows = "".join(
+                        _hierarchy_row(
+                            f'<span class="dim">{c.catalog_number}</span>', 4,
+                            c.track_count, c.disc_count,
+                            c.total_size_bytes, c.total_duration_seconds,
+                        )
+                        for c in alb.catalogs
                     )
-            inner.append(_hierarchy_row(
-                f'<details><summary style="cursor:pointer">{ft.folder_type}</summary></details>', 2,
-                ft.track_count, ft.disc_count, ft.total_size_bytes, ft.total_duration_seconds,
-            ))
-            inner.append(
-                f'<tr class="ft-children" style="display:none"><td colspan="5">'
-                f'<table style="width:100%;border-collapse:collapse">{"".join(ft_inner)}</table>'
-                f'</td></tr>'
-            )
+                    album_rows.append(_expandable_row(
+                        alb.album, 3,
+                        alb.track_count, alb.disc_count,
+                        alb.total_size_bytes, alb.total_duration_seconds,
+                        cat_rows,
+                    ))
 
-        parts.append(_hierarchy_row(
-            f'<details><summary style="cursor:pointer"><strong>{a.artist}</strong></summary></details>', 0,
-            a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds,
+            rt_rows.append(_expandable_row(
+                rt.release_type, 2,
+                rt.track_count, rt.disc_count,
+                rt.total_size_bytes, rt.total_duration_seconds,
+                "".join(album_rows),
+            ))
+
+        parts.append(_expandable_row(
+            f'<strong>{a.artist}</strong>', 0,
+            a.track_count, a.disc_count,
+            a.total_size_bytes, a.total_duration_seconds,
+            "".join(rt_rows),
         ))
-        parts.append(
-            f'<tr class="artist-children" style="display:none"><td colspan="5">'
-            f'<table style="width:100%;border-collapse:collapse">{"".join(inner)}</table>'
-            f'</td></tr>'
-        )
 
     parts.append('</tbody></table>')
 
-    # Minimal inline JS to toggle child rows when <details> is toggled.
-    # Each <details> in a cell controls the next sibling <tr>.
     parts.append('''<script>
 document.querySelectorAll('td details').forEach(d => {
   d.addEventListener('toggle', () => {
@@ -274,11 +283,10 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
         _section(
             "Collection Totals",
             summary_cards=[
+                _card(fmt_count(t.total_album_artists), "Album Artists"),
+                _card(fmt_count(t.total_albums), "Albums"),
+                _card(fmt_count(t.total_versions), "Versions"),
                 _card(fmt_count(t.total_tracks), "Tracks"),
-                _card(fmt_count(t.total_artists), "Artists"),
-                _card(fmt_count(t.total_discs), "Discs"),
-                _card(fmt_duration_hms(t.total_duration_seconds), "Duration"),
-                _card(fmt_size_gb(t.total_size_bytes), "Size"),
             ],
         )
     )
@@ -287,7 +295,7 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
         hierarchy_html = _build_hierarchy_html(data.by_artist)
         sections.append(
             _section(
-                f"Collection Breakdown ({fmt_count(t.total_artists)} artists)",
+                f"Collection Breakdown ({fmt_count(t.total_album_artists)} artists)",
                 text_blocks=[_text(hierarchy_html)],
             )
         )

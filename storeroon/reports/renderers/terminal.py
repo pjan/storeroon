@@ -132,11 +132,12 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
     totals_table = Table(title="Collection Totals", show_header=False, min_width=50)
     totals_table.add_column("Metric", style="bold")
     totals_table.add_column("Value", justify="right")
-    totals_table.add_row("Total tracks", fmt_count(t.total_tracks))
-    totals_table.add_row("Artists", fmt_count(t.total_artists))
-    totals_table.add_row("Discs", fmt_count(t.total_discs))
-    totals_table.add_row("Total duration", fmt_duration_hms(t.total_duration_seconds))
-    totals_table.add_row("Total size", fmt_size_gb(t.total_size_bytes))
+    totals_table.add_row("Album artists", fmt_count(t.total_album_artists))
+    totals_table.add_row("Albums", fmt_count(t.total_albums))
+    totals_table.add_row("Versions", fmt_count(t.total_versions))
+    totals_table.add_row("Tracks", fmt_count(t.total_tracks))
+    totals_table.add_row("Duration", fmt_duration_hms(t.total_duration_seconds))
+    totals_table.add_row("Size", fmt_size_gb(t.total_size_bytes))
     console.print(totals_table)
 
     # Hierarchical breakdown as an indented table.
@@ -157,39 +158,30 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
                 fmt_size_gb(a.total_size_bytes),
                 fmt_duration_hms(a.total_duration_seconds),
             )
-            for ft in a.folder_types:
+            for rt in a.release_types:
                 tbl.add_row(
-                    f"[green]{_indent(ft.folder_type, 1)}[/green]",
-                    fmt_count(ft.track_count),
-                    fmt_count(ft.disc_count),
-                    fmt_size_gb(ft.total_size_bytes),
-                    fmt_duration_hms(ft.total_duration_seconds),
+                    f"[green]{_indent(rt.release_type, 1)}[/green]",
+                    fmt_count(rt.track_count),
+                    fmt_count(rt.disc_count),
+                    fmt_size_gb(rt.total_size_bytes),
+                    fmt_duration_hms(rt.total_duration_seconds),
                 )
-                for rg in ft.release_groups:
-                    if len(rg.pressings) == 1:
-                        p = rg.pressings[0]
-                        tbl.add_row(
-                            _indent(rg.release_group, 2),
-                            fmt_count(p.track_count),
-                            fmt_count(p.disc_count),
-                            fmt_size_gb(p.total_size_bytes),
-                            fmt_duration_hms(p.total_duration_seconds),
-                        )
-                    else:
-                        tbl.add_row(
-                            _indent(rg.release_group, 2),
-                            fmt_count(rg.track_count),
-                            fmt_count(rg.disc_count),
-                            fmt_size_gb(rg.total_size_bytes),
-                            fmt_duration_hms(rg.total_duration_seconds),
-                        )
-                        for p in rg.pressings:
+                for alb in rt.albums:
+                    tbl.add_row(
+                        _indent(alb.album, 2),
+                        fmt_count(alb.track_count),
+                        fmt_count(alb.disc_count),
+                        fmt_size_gb(alb.total_size_bytes),
+                        fmt_duration_hms(alb.total_duration_seconds),
+                    )
+                    if len(alb.catalogs) > 1:
+                        for c in alb.catalogs:
                             tbl.add_row(
-                                f"[dim]{_indent(p.pressing_name, 3)}[/dim]",
-                                f"[dim]{fmt_count(p.track_count)}[/dim]",
-                                f"[dim]{fmt_count(p.disc_count)}[/dim]",
-                                f"[dim]{fmt_size_gb(p.total_size_bytes)}[/dim]",
-                                f"[dim]{fmt_duration_hms(p.total_duration_seconds)}[/dim]",
+                                f"[dim]{_indent(c.catalog_number, 3)}[/dim]",
+                                f"[dim]{fmt_count(c.track_count)}[/dim]",
+                                f"[dim]{fmt_count(c.disc_count)}[/dim]",
+                                f"[dim]{fmt_size_gb(c.total_size_bytes)}[/dim]",
+                                f"[dim]{fmt_duration_hms(c.total_duration_seconds)}[/dim]",
                             )
         console.print(tbl)
 
@@ -207,9 +199,10 @@ def render_overview_summary(console: Console, data: OverviewSummaryData) -> None
     )
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
+    table.add_row("Album artists", fmt_count(t.total_album_artists))
+    table.add_row("Albums", fmt_count(t.total_albums))
+    table.add_row("Versions", fmt_count(t.total_versions))
     table.add_row("Tracks", fmt_count(t.total_tracks))
-    table.add_row("Artists", fmt_count(t.total_artists))
-    table.add_row("Discs", fmt_count(t.total_discs))
     table.add_row("Duration", fmt_duration_hms(t.total_duration_seconds))
     table.add_row("Size", fmt_size_gb(t.total_size_bytes))
     console.print(table)
