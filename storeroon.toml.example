@@ -118,7 +118,7 @@ ORIGINALYEAR    = "ORIGINALDATE"
 "ALBUM ARTIST"  = "ALBUMARTIST"
 TOTALTRACKS     = "TRACKTOTAL"
 TOTALDISCS      = "DISCTOTAL"
-TOTALDISCS      = "DISCS"
+DISCS           = "DISCTOTAL"
 
 [tags.standard_optional]
 # Legitimate tags that are out of canonical scope but should not be

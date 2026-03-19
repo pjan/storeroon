@@ -46,9 +46,7 @@ class AliasUsageRow:
 
     canonical_key: str
     alias_key: str
-    files_with_alias: int  # files where the alias key is present
-    files_consistent: int  # of those, canonical key present with same value
-    consistency_pct: float  # files_consistent / files_with_alias * 100
+    consistency_pct: float  # % of files with alias that also have canonical with same value
 
 
 @dataclass(frozen=True, slots=True)

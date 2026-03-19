@@ -603,10 +603,8 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
                 [
                     _cell(row.canonical_key, cls="mono"),
                     _cell(row.alias_key, cls="mono"),
-                    _cell(fmt_count(row.files_with_alias), cls="num"),
                     _cell(
                         fmt_pct(row.consistency_pct),
-                        cls="num",
                         bar_pct=row.consistency_pct,
                         bar_cls=bar_cls,
                     ),
@@ -622,7 +620,6 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
                         [
                             _hdr("Canonical Key"),
                             _hdr("Alias Key"),
-                            _hdr("Files with Alias", "num"),
                             _hdr("Consistency", cls="cov-col-coverage"),
                         ],
                         alias_rows,

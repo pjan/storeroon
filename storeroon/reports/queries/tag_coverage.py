@@ -167,8 +167,6 @@ def _alias_usage(
             AliasUsageRow(
                 canonical_key=canonical_key,
                 alias_key=alias_key,
-                files_with_alias=files_with_alias,
-                files_consistent=files_consistent,
                 consistency_pct=safe_pct(files_consistent, files_with_alias),
             )
         )
