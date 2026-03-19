@@ -598,32 +598,32 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
     if data.alias_usage:
         alias_rows: list[list[dict[str, Any]]] = []
         for row in data.alias_usage:
-            mismatch_cls = "severity-error" if row.files_mismatched > 0 else ""
+            bar_cls = "bar-green" if row.consistency_pct >= 100.0 else "bar-red"
             alias_rows.append(
                 [
                     _cell(row.canonical_key, cls="mono"),
                     _cell(row.alias_key, cls="mono"),
-                    _cell(fmt_count(row.files_with_both), cls="num"),
-                    _cell(fmt_count(row.files_matching), cls="num"),
+                    _cell(fmt_count(row.files_with_alias), cls="num"),
                     _cell(
-                        fmt_count(row.files_mismatched),
-                        cls=f"num {mismatch_cls}".strip(),
+                        fmt_pct(row.consistency_pct),
+                        cls="num",
+                        bar_pct=row.consistency_pct,
+                        bar_cls=bar_cls,
                     ),
                 ]
             )
         sections.append(
             _section(
                 "Alias Consistency",
-                note="Files where both canonical and alias tags are present. Mismatches indicate conflicting values.",
+                note="For files with the alias key, shows what % also have the canonical key set to the same value. Target: 100%.",
                 tables=[
                     _table(
                         None,
                         [
                             _hdr("Canonical Key"),
                             _hdr("Alias Key"),
-                            _hdr("Both Present", "num"),
-                            _hdr("Matching", "num"),
-                            _hdr("Mismatched", "num"),
+                            _hdr("Files with Alias", "num"),
+                            _hdr("Consistency", cls="cov-col-coverage"),
                         ],
                         alias_rows,
                     )

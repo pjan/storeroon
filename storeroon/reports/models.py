@@ -39,15 +39,16 @@ class TagCoverageRow:
 class AliasUsageRow:
     """Consistency check for a canonical/alias tag pair.
 
-    Tracks files where both the canonical and alias key are present,
-    and how many of those have matching values.
+    For files that have the alias key set, checks whether the canonical
+    key is also present with the same value.  A healthy collection has
+    consistency_pct at 100%.
     """
 
     canonical_key: str
     alias_key: str
-    files_with_both: int  # files where both keys are present
-    files_matching: int  # of those, values match
-    files_mismatched: int  # of those, values differ
+    files_with_alias: int  # files where the alias key is present
+    files_consistent: int  # of those, canonical key present with same value
+    consistency_pct: float  # files_consistent / files_with_alias * 100
 
 
 @dataclass(frozen=True, slots=True)

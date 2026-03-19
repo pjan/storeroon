@@ -416,18 +416,19 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
         alias_table = Table(show_header=True, header_style="bold")
         alias_table.add_column("Canonical Key", style="cyan")
         alias_table.add_column("Alias Key")
-        alias_table.add_column("Both Present", justify="right")
-        alias_table.add_column("Matching", justify="right")
-        alias_table.add_column("Mismatched", justify="right")
+        alias_table.add_column("Files with Alias", justify="right")
+        alias_table.add_column("", min_width=20)
+        alias_table.add_column("Consistency", justify="right")
 
         for row in data.alias_usage:
-            mismatch_style = "bold red" if row.files_mismatched > 0 else ""
+            bar_color = "green" if row.consistency_pct >= 100.0 else "red"
+            chart = bar_chart(row.consistency_pct, 100.0, width=20)
             alias_table.add_row(
                 row.canonical_key,
                 row.alias_key,
-                fmt_count(row.files_with_both),
-                fmt_count(row.files_matching),
-                Text(fmt_count(row.files_mismatched), style=mismatch_style),
+                fmt_count(row.files_with_alias),
+                f"[{bar_color}]{chart}[/{bar_color}]",
+                fmt_pct(row.consistency_pct),
             )
         console.print(alias_table)
 

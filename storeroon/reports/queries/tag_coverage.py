@@ -54,21 +54,31 @@ GROUP BY tag_key_upper
 ORDER BY file_count DESC
 """
 
-# Alias consistency: for files that have both the canonical and alias key,
-# check whether values match.  Returns one row per file with both keys.
-_ALIAS_BOTH_PRESENT_SQL = """
+# Count of files where a given alias key is present (non-empty).
+_ALIAS_FILES_SQL = """
+SELECT COUNT(DISTINCT file_id) AS cnt
+FROM raw_tags
+WHERE tag_key_upper = ?
+  AND TRIM(tag_value) != ''
+  AND file_id IN (SELECT id FROM files WHERE status = 'ok')
+"""
+
+# For files that have the alias key, check if the canonical key has the
+# same value.  Returns one row per file with the alias key present.
+_ALIAS_CONSISTENCY_SQL = """
 SELECT
-    rt_canon.file_id,
-    rt_canon.tag_value AS canonical_value,
-    rt_alias.tag_value AS alias_value
-FROM raw_tags rt_canon
-JOIN raw_tags rt_alias
-    ON rt_alias.file_id = rt_canon.file_id
-    AND rt_alias.tag_key_upper = ?
-    AND rt_alias.tag_index = 0
-WHERE rt_canon.tag_key_upper = ?
-  AND rt_canon.tag_index = 0
-  AND rt_canon.file_id IN (SELECT id FROM files WHERE status = 'ok')
+    rt_alias.file_id,
+    rt_alias.tag_value AS alias_value,
+    rt_canon.tag_value AS canonical_value
+FROM raw_tags rt_alias
+LEFT JOIN raw_tags rt_canon
+    ON rt_canon.file_id = rt_alias.file_id
+    AND rt_canon.tag_key_upper = ?
+    AND rt_canon.tag_index = 0
+WHERE rt_alias.tag_key_upper = ?
+  AND rt_alias.tag_index = 0
+  AND TRIM(rt_alias.tag_value) != ''
+  AND rt_alias.file_id IN (SELECT id FROM files WHERE status = 'ok')
 """
 
 
@@ -125,8 +135,9 @@ def _alias_usage(
     """Check value consistency for alias pairs where the canonical key
     is in the required or recommended config lists.
 
-    For each qualifying alias pair, counts files where both keys are
-    present and whether their values match.
+    For each qualifying alias pair, counts files that have the alias key
+    and checks whether the canonical key is present with the same value.
+    A healthy collection has 100% consistency.
     """
     result: list[AliasUsageRow] = []
     for alias_key, canonical_key in sorted(aliases.items()):
@@ -134,27 +145,33 @@ def _alias_usage(
         if canonical_key not in canonical_keys:
             continue
 
+        # Count files with the alias key present.
+        count_row = conn.execute(_ALIAS_FILES_SQL, (alias_key,)).fetchone()
+        files_with_alias = count_row[0] if count_row else 0
+
+        if files_with_alias == 0:
+            continue
+
+        # For each file with the alias, check canonical value.
         rows = conn.execute(
-            _ALIAS_BOTH_PRESENT_SQL, (alias_key, canonical_key)
+            _ALIAS_CONSISTENCY_SQL, (canonical_key, alias_key)
         ).fetchall()
 
-        files_with_both = len(rows)
-        files_matching = sum(
+        files_consistent = sum(
             1 for r in rows
-            if r["canonical_value"].strip() == r["alias_value"].strip()
+            if r["canonical_value"] is not None
+            and r["canonical_value"].strip() == r["alias_value"].strip()
         )
-        files_mismatched = files_with_both - files_matching
 
-        if files_with_both > 0:
-            result.append(
-                AliasUsageRow(
-                    canonical_key=canonical_key,
-                    alias_key=alias_key,
-                    files_with_both=files_with_both,
-                    files_matching=files_matching,
-                    files_mismatched=files_mismatched,
-                )
+        result.append(
+            AliasUsageRow(
+                canonical_key=canonical_key,
+                alias_key=alias_key,
+                files_with_alias=files_with_alias,
+                files_consistent=files_consistent,
+                consistency_pct=safe_pct(files_consistent, files_with_alias),
             )
+        )
     return result
 
 
