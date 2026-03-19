@@ -392,8 +392,8 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
         )
     )
 
-    # Histogram charts for distributions
-    histograms_html = ""
+    # Histogram charts for distributions — 2-column grid
+    charts: list[str] = []
     for label, buckets in [
         ("Sample Rate", data.sample_rate_distribution),
         ("Bit Depth", data.bit_depth_distribution),
@@ -402,11 +402,12 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
         ("File Size", data.file_size_distribution),
         ("Track Duration", data.duration_distribution),
     ]:
-        histograms_html += _histogram_html(label, buckets)
+        charts.append(_histogram_html(label, buckets))
 
-    if histograms_html:
+    if charts:
+        grid_html = f'<div class="histogram-grid">{"".join(charts)}</div>'
         sections.append(
-            _section("Distributions", text_blocks=[_text(histograms_html)])
+            _section("Distributions", text_blocks=[_text(grid_html)])
         )
 
     if data.duration_outliers:
