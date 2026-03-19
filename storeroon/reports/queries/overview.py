@@ -82,7 +82,9 @@ def _parse_totaldiscs(value: str) -> int:
 _CatKey = tuple[str, str, str, str]  # (artist, releasetype, album, catalognumber)
 
 
-def _build_hierarchy(conn: sqlite3.Connection) -> tuple[list[ArtistBreakdown], OverviewTotals]:
+def _build_hierarchy(
+    conn: sqlite3.Connection,
+) -> tuple[list[ArtistBreakdown], OverviewTotals]:
     """Build the full 4-level hierarchy from tag values and compute totals."""
     rows = conn.execute(_FILES_SQL).fetchall()
 
@@ -121,18 +123,18 @@ def _build_hierarchy(conn: sqlite3.Connection) -> tuple[list[ArtistBreakdown], O
     # Compute totals
     all_artists: set[str] = set()
     all_albums: set[tuple[str, str]] = set()  # (artist, album)
-    all_versions: set[_CatKey] = set()
+    all_releases: set[_CatKey] = set()
 
     for key in cat_tracks:
         artist, rtype, album, catno = key
         all_artists.add(artist)
         all_albums.add((artist, album))
-        all_versions.add(key)
+        all_releases.add(key)
 
     totals = OverviewTotals(
         total_album_artists=len(all_artists),
         total_albums=len(all_albums),
-        total_versions=len(all_versions),
+        total_releases=len(all_releases),
         total_tracks=total_tracks,
         total_duration_seconds=total_duration,
         total_size_bytes=total_size,

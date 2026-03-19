@@ -172,13 +172,13 @@ def _hierarchy_row(
     """Build a single <tr> for the hierarchy table."""
     pad = f"padding-left:{indent * 1.5}rem" if indent else ""
     return (
-        f'<tr>'
+        f"<tr>"
         f'<td style="{pad}">{name_html}</td>'
         f'<td class="num">{fmt_count(tracks)}</td>'
         f'<td class="num">{fmt_count(discs)}</td>'
         f'<td class="num">{fmt_size_gb(size)}</td>'
         f'<td class="num">{fmt_duration_hms(duration)}</td>'
-        f'</tr>'
+        f"</tr>"
     )
 
 
@@ -194,12 +194,16 @@ def _expandable_row(
     """Build an expandable row: a summary row + a hidden children row."""
     row = _hierarchy_row(
         f'<details><summary style="cursor:pointer">{label}</summary></details>',
-        indent, tracks, discs, size, duration,
+        indent,
+        tracks,
+        discs,
+        size,
+        duration,
     )
     child_row = (
         f'<tr class="child-rows" style="display:none"><td colspan="5">'
         f'<table style="width:100%;border-collapse:collapse">{children_html}</table>'
-        f'</td></tr>'
+        f"</td></tr>"
     )
     return row + child_row
 
@@ -208,14 +212,14 @@ def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
     """Build a table with nested expandable rows for the collection hierarchy."""
     parts: list[str] = [
         '<table style="width:100%;border-collapse:collapse">',
-        '<thead><tr>'
+        "<thead><tr>"
         '<th style="text-align:left">Name</th>'
         '<th class="num">Tracks</th>'
         '<th class="num">Discs</th>'
         '<th class="num">Size</th>'
         '<th class="num">Duration</th>'
-        '</tr></thead>',
-        '<tbody>',
+        "</tr></thead>",
+        "<tbody>",
     ]
 
     for a in artists:
@@ -225,52 +229,75 @@ def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
             for alb in rt.albums:
                 if len(alb.catalogs) == 1:
                     # Single version — show flat
-                    album_rows.append(_hierarchy_row(
-                        alb.album, 3,
-                        alb.track_count, alb.disc_count,
-                        alb.total_size_bytes, alb.total_duration_seconds,
-                    ))
+                    album_rows.append(
+                        _hierarchy_row(
+                            alb.album,
+                            3,
+                            alb.track_count,
+                            alb.disc_count,
+                            alb.total_size_bytes,
+                            alb.total_duration_seconds,
+                        )
+                    )
                 else:
-                    # Multiple versions — expandable
+                    # Multiple releases — expandable
                     cat_rows = "".join(
                         _hierarchy_row(
-                            f'<span class="dim">{c.catalog_number}</span>', 4,
-                            c.track_count, c.disc_count,
-                            c.total_size_bytes, c.total_duration_seconds,
+                            f'<span class="dim">{c.catalog_number}</span>',
+                            4,
+                            c.track_count,
+                            c.disc_count,
+                            c.total_size_bytes,
+                            c.total_duration_seconds,
                         )
                         for c in alb.catalogs
                     )
-                    album_rows.append(_expandable_row(
-                        alb.album, 3,
-                        alb.track_count, alb.disc_count,
-                        alb.total_size_bytes, alb.total_duration_seconds,
-                        cat_rows,
-                    ))
+                    album_rows.append(
+                        _expandable_row(
+                            alb.album,
+                            3,
+                            alb.track_count,
+                            alb.disc_count,
+                            alb.total_size_bytes,
+                            alb.total_duration_seconds,
+                            cat_rows,
+                        )
+                    )
 
-            rt_rows.append(_expandable_row(
-                rt.release_type, 2,
-                rt.track_count, rt.disc_count,
-                rt.total_size_bytes, rt.total_duration_seconds,
-                "".join(album_rows),
-            ))
+            rt_rows.append(
+                _expandable_row(
+                    rt.release_type,
+                    2,
+                    rt.track_count,
+                    rt.disc_count,
+                    rt.total_size_bytes,
+                    rt.total_duration_seconds,
+                    "".join(album_rows),
+                )
+            )
 
-        parts.append(_expandable_row(
-            f'<strong>{a.artist}</strong>', 0,
-            a.track_count, a.disc_count,
-            a.total_size_bytes, a.total_duration_seconds,
-            "".join(rt_rows),
-        ))
+        parts.append(
+            _expandable_row(
+                f"<strong>{a.artist}</strong>",
+                0,
+                a.track_count,
+                a.disc_count,
+                a.total_size_bytes,
+                a.total_duration_seconds,
+                "".join(rt_rows),
+            )
+        )
 
-    parts.append('</tbody></table>')
+    parts.append("</tbody></table>")
 
-    parts.append('''<script>
+    parts.append("""<script>
 document.querySelectorAll('td details').forEach(d => {
   d.addEventListener('toggle', () => {
     const childRow = d.closest('tr').nextElementSibling;
     if (childRow) childRow.style.display = d.open ? '' : 'none';
   });
 });
-</script>''')
+</script>""")
 
     return "\n".join(parts)
 
@@ -285,7 +312,7 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
             summary_cards=[
                 _card(fmt_count(t.total_album_artists), "Album Artists"),
                 _card(fmt_count(t.total_albums), "Albums"),
-                _card(fmt_count(t.total_versions), "Versions"),
+                _card(fmt_count(t.total_releases), "Releases"),
                 _card(fmt_count(t.total_tracks), "Tracks"),
             ],
         )

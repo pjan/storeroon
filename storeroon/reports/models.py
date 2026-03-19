@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # =========================================================================
 # Shared / common
 # =========================================================================
@@ -99,7 +98,7 @@ class OverviewTotals:
 
     total_album_artists: int  # distinct ALBUMARTIST tag values
     total_albums: int  # distinct (ALBUMARTIST, ALBUM) pairs
-    total_versions: int  # distinct (ALBUMARTIST, ALBUM, CATALOGNUMBER) tuples
+    total_releases: int  # distinct (ALBUMARTIST, ALBUM, CATALOGNUMBER) tuples
     total_tracks: int
     total_duration_seconds: float
     total_size_bytes: int
@@ -118,7 +117,7 @@ class CatalogBreakdown:
 
 @dataclass(frozen=True, slots=True)
 class AlbumBreakdown:
-    """An album, possibly with multiple catalog versions."""
+    """An album, possibly with multiple catalog releases."""
 
     album: str  # ALBUM tag value
     track_count: int
