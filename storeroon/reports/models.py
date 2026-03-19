@@ -267,7 +267,7 @@ class TagCoverageSummaryData:
 
 
 # =========================================================================
-# Report 5 — Tag format quality
+# Report 5 — Tag quality and integrity
 # =========================================================================
 
 
@@ -281,21 +281,6 @@ class FieldFormatSection:
     invalid_values_total: int  # total count if capped at 20
     # Optional extra distributions (e.g. date precision)
     extra: dict[str, list[DatePrecisionRow]] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class TagFormatsFullData:
-    """Complete data for the tag format quality report."""
-
-    total_files: int
-    sections: list[FieldFormatSection]
-
-
-@dataclass(frozen=True, slots=True)
-class TagFormatsSummaryData:
-    """Summary data for tag formats in the summary command."""
-
-    fields_with_invalid: list[FieldValidationRow]
 
 
 # =========================================================================
@@ -349,11 +334,6 @@ class AlbumConsistencySummaryData:
     total_albums: int
     albums_with_violations: int
     top_violation_types: list[ConsistencyViolationSummary]
-
-
-# =========================================================================
-# Report 7 — External ID coverage and integrity
-# =========================================================================
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,27 +390,24 @@ class IdSectionData:
 
 
 @dataclass(frozen=True, slots=True)
-class IdsFullData:
-    """Complete data for the external IDs report."""
+class TagQualityFullData:
+    """Complete data for the tag quality and integrity report."""
 
     total_files: int
+    field_sections: list[FieldFormatSection]  # date, track/disc, ISRC validation
     musicbrainz: IdSectionData
     discogs: IdSectionData
 
 
 @dataclass(frozen=True, slots=True)
-class IdsSummaryData:
-    """Summary data for external IDs in the summary command."""
+class TagQualitySummaryData:
+    """Summary data for tag quality in the summary command."""
 
-    total_files: int
-    mb_overall_coverage_pct: float  # % of files with all 6 MBIDs valid
+    fields_with_invalid: list[FieldValidationRow]
+    mb_overall_coverage_pct: float
     mb_malformed_count: int
-    mb_partial_album_count: int
-    mb_backfill_track_count: int
-    discogs_overall_coverage_pct: float  # % of files with all 4 Discogs IDs valid
+    discogs_overall_coverage_pct: float
     discogs_malformed_count: int
-    discogs_partial_album_count: int
-    discogs_backfill_track_count: int
 
 
 # =========================================================================
@@ -786,9 +763,8 @@ class MasterSummary:
     overview: OverviewSummaryData | None = None
     technical: TechnicalSummaryData | None = None
     tags: TagCoverageSummaryData | None = None
-    tag_formats: TagFormatsSummaryData | None = None
+    tag_quality: TagQualitySummaryData | None = None
     album_consistency: AlbumConsistencySummaryData | None = None
-    ids: IdsSummaryData | None = None
     duplicates: DuplicatesSummaryData | None = None
     issues: IssuesSummaryData | None = None
     artists: ArtistsSummaryData | None = None

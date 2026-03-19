@@ -25,8 +25,6 @@ from storeroon.reports.models import (
     DuplicatesSummaryData,
     GenresFullData,
     GenresSummaryData,
-    IdsFullData,
-    IdsSummaryData,
     IssuesFullData,
     IssuesSummaryData,
     LyricsFullData,
@@ -38,8 +36,8 @@ from storeroon.reports.models import (
     ReplayGainSummaryData,
     TagCoverageFullData,
     TagCoverageSummaryData,
-    TagFormatsFullData,
-    TagFormatsSummaryData,
+    TagQualityFullData,
+    TagQualitySummaryData,
     TechnicalFullData,
     TechnicalSummaryData,
 )
@@ -518,20 +516,21 @@ def render_tag_coverage_summary(console: Console, data: TagCoverageSummaryData) 
 
 
 # =========================================================================
-# Report 5 — Tag format quality
+# Report 5+7 — Tag quality & integrity (field formats + external IDs)
 # =========================================================================
 
 
-def render_tag_formats(console: Console, data: TagFormatsFullData) -> None:
-    """Render the full tag format quality report."""
+def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
+    """Render the combined tag quality and integrity report."""
     if data.total_files == 0:
         _empty_db_message(console)
         return
 
-    _section_heading(console, "Tag Format Quality")
+    _section_heading(console, "Tag Quality & Integrity")
     console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
 
-    for section in data.sections:
+    # ── Field format sections ──
+    for section in data.field_sections:
         _subsection_heading(console, f"Field: {section.field_name}")
 
         s = section.summary
@@ -587,137 +586,7 @@ def render_tag_formats(console: Console, data: TagFormatsFullData) -> None:
                 iv_table.add_row(iv.value, fmt_count(iv.count))
             console.print(iv_table)
 
-
-def render_tag_formats_summary(console: Console, data: TagFormatsSummaryData) -> None:
-    """Render tag formats summary in summary mode."""
-    if not data.fields_with_invalid:
-        console.print("  [green]All validated fields have correct formats.[/green]")
-        return
-
-    _subsection_heading(console, "📝 Tag Format Issues")
-    for f in data.fields_with_invalid:
-        console.print(
-            f"  [red]• {f.field_name}[/red]: "
-            f"{fmt_count(f.invalid_count)} invalid ({fmt_pct(f.invalid_pct)})"
-        )
-
-
-# =========================================================================
-# Report 6 — Intra-album consistency
-# =========================================================================
-
-
-def render_album_consistency(console: Console, data: AlbumConsistencyFullData) -> None:
-    """Render the full album consistency report."""
-    if data.total_albums == 0:
-        _empty_db_message(console)
-        return
-
-    _section_heading(console, "Intra-Album Consistency")
-    console.print(f"Total albums checked: [bold]{fmt_count(data.total_albums)}[/bold]")
-    console.print(
-        f"Albums with violations: [bold red]{fmt_count(data.albums_with_violations)}[/bold red]"
-    )
-
-    # Table 1: Field consistency violations.
-    if data.field_violations:
-        _subsection_heading(
-            console,
-            f"Field Consistency Violations ({len(data.field_violations)} found)",
-        )
-        fv_table = Table(show_header=True, header_style="bold")
-        fv_table.add_column("Album Directory", style="dim", max_width=60)
-        fv_table.add_column("Field", style="cyan")
-        fv_table.add_column("Distinct Values")
-        fv_table.add_column("Null Tracks", justify="right")
-
-        for v in data.field_violations[:100]:
-            vals_display = " | ".join(
-                f"{val} ({v.track_counts_per_value.get(val, '?')})"
-                for val in v.distinct_values[:5]
-            )
-            if len(v.distinct_values) > 5:
-                vals_display += f" … +{len(v.distinct_values) - 5} more"
-            fv_table.add_row(
-                v.album_dir,
-                v.field_name,
-                vals_display,
-                str(v.null_track_count) if v.null_track_count > 0 else "",
-            )
-        if len(data.field_violations) > 100:
-            console.print(
-                f"[dim]  … and {len(data.field_violations) - 100} more "
-                f"(use --output csv for full list)[/dim]"
-            )
-        console.print(fv_table)
-
-    # Table 2: Track numbering violations.
-    if data.numbering_violations:
-        _subsection_heading(
-            console,
-            f"Track Numbering Violations ({len(data.numbering_violations)} found)",
-        )
-        nv_table = Table(show_header=True, header_style="bold")
-        nv_table.add_column("Album Directory", style="dim", max_width=60)
-        nv_table.add_column("Check Type", style="cyan")
-        nv_table.add_column("Description")
-
-        for v in data.numbering_violations[:100]:
-            nv_table.add_row(v.album_dir, v.check_type, v.description)
-        if len(data.numbering_violations) > 100:
-            console.print(
-                f"[dim]  … and {len(data.numbering_violations) - 100} more "
-                f"(use --output csv for full list)[/dim]"
-            )
-        console.print(nv_table)
-
-    # Table 3: Summary by violation type.
-    if data.summary_by_type:
-        _subsection_heading(console, "Summary by Violation Type")
-        sv_table = Table(show_header=True, header_style="bold")
-        sv_table.add_column("Check Type", style="cyan")
-        sv_table.add_column("Albums Affected", justify="right")
-
-        for s in data.summary_by_type:
-            sv_table.add_row(s.check_type, fmt_count(s.album_count))
-        console.print(sv_table)
-
-    if not data.field_violations and not data.numbering_violations:
-        console.print("[green]No consistency violations found.[/green]")
-
-
-def render_album_consistency_summary(
-    console: Console, data: AlbumConsistencySummaryData
-) -> None:
-    """Render album consistency summary in summary mode."""
-    if data.total_albums == 0:
-        return
-
-    _subsection_heading(console, "💿 Album Consistency")
-    console.print(
-        f"  Albums checked: {fmt_count(data.total_albums)}, "
-        f"with violations: [{'red' if data.albums_with_violations else 'green'}]"
-        f"{fmt_count(data.albums_with_violations)}[/]"
-    )
-    if data.top_violation_types:
-        for v in data.top_violation_types[:5]:
-            console.print(f"    • {v.check_type}: {fmt_count(v.album_count)} albums")
-
-
-# =========================================================================
-# Report 7 — External ID coverage and integrity
-# =========================================================================
-
-
-def render_ids(console: Console, data: IdsFullData) -> None:
-    """Render the full external IDs report."""
-    if data.total_files == 0:
-        _empty_db_message(console)
-        return
-
-    _section_heading(console, "External ID Coverage & Integrity")
-    console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
-
+    # ── MusicBrainz & Discogs ID sections ──
     for section in [data.musicbrainz, data.discogs]:
         _subsection_heading(console, f"{section.source_name} IDs")
 
@@ -821,30 +690,131 @@ def render_ids(console: Console, data: IdsFullData) -> None:
             console.print(f"  [dim]{bf.description}[/dim]")
 
 
-def render_ids_summary(console: Console, data: IdsSummaryData) -> None:
-    """Render external IDs summary in summary mode."""
-    if data.total_files == 0:
-        return
+def render_tag_quality_summary(console: Console, data: TagQualitySummaryData) -> None:
+    """Render tag quality summary in summary mode."""
+    _subsection_heading(console, "\U0001f4dd Tag Quality & Integrity")
 
-    _subsection_heading(console, "🆔 External IDs")
+    # Fields with invalid values.
+    if data.fields_with_invalid:
+        for f in data.fields_with_invalid:
+            console.print(
+                f"  [red]\u2022 {f.field_name}[/red]: "
+                f"{fmt_count(f.invalid_count)} invalid ({fmt_pct(f.invalid_pct)})"
+            )
+    else:
+        console.print("  [green]All validated fields have correct formats.[/green]")
+
+    # MB / Discogs coverage and malformed counts.
     console.print(
         f"  MusicBrainz: [bold]{fmt_pct(data.mb_overall_coverage_pct)}[/bold] "
-        f"fully covered, {fmt_count(data.mb_malformed_count)} malformed, "
-        f"{fmt_count(data.mb_partial_album_count)} partial albums"
+        f"fully covered, {fmt_count(data.mb_malformed_count)} malformed"
     )
-    if data.mb_backfill_track_count > 0:
-        console.print(
-            f"    → {fmt_count(data.mb_backfill_track_count)} tracks backfillable"
-        )
     console.print(
         f"  Discogs: [bold]{fmt_pct(data.discogs_overall_coverage_pct)}[/bold] "
-        f"fully covered, {fmt_count(data.discogs_malformed_count)} malformed, "
-        f"{fmt_count(data.discogs_partial_album_count)} partial albums"
+        f"fully covered, {fmt_count(data.discogs_malformed_count)} malformed"
     )
-    if data.discogs_backfill_track_count > 0:
-        console.print(
-            f"    → {fmt_count(data.discogs_backfill_track_count)} tracks backfillable"
+
+
+# =========================================================================
+# Report 6 — Intra-album consistency
+# =========================================================================
+
+
+def render_album_consistency(console: Console, data: AlbumConsistencyFullData) -> None:
+    """Render the full album consistency report."""
+    if data.total_albums == 0:
+        _empty_db_message(console)
+        return
+
+    _section_heading(console, "Intra-Album Consistency")
+    console.print(f"Total albums checked: [bold]{fmt_count(data.total_albums)}[/bold]")
+    console.print(
+        f"Albums with violations: [bold red]{fmt_count(data.albums_with_violations)}[/bold red]"
+    )
+
+    # Table 1: Field consistency violations.
+    if data.field_violations:
+        _subsection_heading(
+            console,
+            f"Field Consistency Violations ({len(data.field_violations)} found)",
         )
+        fv_table = Table(show_header=True, header_style="bold")
+        fv_table.add_column("Album Directory", style="dim", max_width=60)
+        fv_table.add_column("Field", style="cyan")
+        fv_table.add_column("Distinct Values")
+        fv_table.add_column("Null Tracks", justify="right")
+
+        for v in data.field_violations[:100]:
+            vals_display = " | ".join(
+                f"{val} ({v.track_counts_per_value.get(val, '?')})"
+                for val in v.distinct_values[:5]
+            )
+            if len(v.distinct_values) > 5:
+                vals_display += f" … +{len(v.distinct_values) - 5} more"
+            fv_table.add_row(
+                v.album_dir,
+                v.field_name,
+                vals_display,
+                str(v.null_track_count) if v.null_track_count > 0 else "",
+            )
+        if len(data.field_violations) > 100:
+            console.print(
+                f"[dim]  … and {len(data.field_violations) - 100} more "
+                f"(use --output csv for full list)[/dim]"
+            )
+        console.print(fv_table)
+
+    # Table 2: Track numbering violations.
+    if data.numbering_violations:
+        _subsection_heading(
+            console,
+            f"Track Numbering Violations ({len(data.numbering_violations)} found)",
+        )
+        nv_table = Table(show_header=True, header_style="bold")
+        nv_table.add_column("Album Directory", style="dim", max_width=60)
+        nv_table.add_column("Check Type", style="cyan")
+        nv_table.add_column("Description")
+
+        for v in data.numbering_violations[:100]:
+            nv_table.add_row(v.album_dir, v.check_type, v.description)
+        if len(data.numbering_violations) > 100:
+            console.print(
+                f"[dim]  … and {len(data.numbering_violations) - 100} more "
+                f"(use --output csv for full list)[/dim]"
+            )
+        console.print(nv_table)
+
+    # Table 3: Summary by violation type.
+    if data.summary_by_type:
+        _subsection_heading(console, "Summary by Violation Type")
+        sv_table = Table(show_header=True, header_style="bold")
+        sv_table.add_column("Check Type", style="cyan")
+        sv_table.add_column("Albums Affected", justify="right")
+
+        for s in data.summary_by_type:
+            sv_table.add_row(s.check_type, fmt_count(s.album_count))
+        console.print(sv_table)
+
+    if not data.field_violations and not data.numbering_violations:
+        console.print("[green]No consistency violations found.[/green]")
+
+
+def render_album_consistency_summary(
+    console: Console, data: AlbumConsistencySummaryData
+) -> None:
+    """Render album consistency summary in summary mode."""
+    if data.total_albums == 0:
+        return
+
+    _subsection_heading(console, "💿 Album Consistency")
+    console.print(
+        f"  Albums checked: {fmt_count(data.total_albums)}, "
+        f"with violations: [{'red' if data.albums_with_violations else 'green'}]"
+        f"{fmt_count(data.albums_with_violations)}[/]"
+    )
+    if data.top_violation_types:
+        for v in data.top_violation_types[:5]:
+            console.print(f"    • {v.check_type}: {fmt_count(v.album_count)} albums")
 
 
 # =========================================================================
@@ -1550,12 +1520,10 @@ def render_master_summary(console: Console, summary: MasterSummary) -> None:
         render_technical_summary(console, summary.technical)
     if summary.tags:
         render_tag_coverage_summary(console, summary.tags)
-    if summary.tag_formats:
-        render_tag_formats_summary(console, summary.tag_formats)
+    if summary.tag_quality:
+        render_tag_quality_summary(console, summary.tag_quality)
     if summary.album_consistency:
         render_album_consistency_summary(console, summary.album_consistency)
-    if summary.ids:
-        render_ids_summary(console, summary.ids)
     if summary.duplicates:
         render_duplicates_summary(console, summary.duplicates)
     if summary.issues:

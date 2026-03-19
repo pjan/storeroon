@@ -20,14 +20,13 @@ from storeroon.reports.models import (
     BucketCount,
     DuplicatesFullData,
     GenresFullData,
-    IdsFullData,
     IssuesFullData,
     LyricsFullData,
     OverviewFullData,
     ReplayGainFullData,
     TagCoverageFullData,
     TagCoverageRow,
-    TagFormatsFullData,
+    TagQualityFullData,
     TechnicalFullData,
 )
 from storeroon.reports.utils import (
@@ -47,9 +46,8 @@ REPORT_TITLES: dict[str, str] = {
     "overview": "Collection Overview",
     "technical": "Audio Technical Quality",
     "tags": "Tag Coverage & Key Inventory",
-    "tag_formats": "Tag Format Quality",
+    "tag_quality": "Tag Quality & Integrity",
     "album_consistency": "Intra-Album Consistency",
-    "ids": "External ID Coverage & Integrity",
     "duplicates": "Duplicates",
     "issues": "Scan Issues",
     "artists": "Artist Name Consistency",
@@ -671,97 +669,147 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
 # =========================================================================
 
 
-def build_tag_formats_sections(data: TagFormatsFullData) -> list[dict[str, Any]]:
+def _build_field_section(sec: Any) -> dict[str, Any]:
+    """Build a single field validation section (for tag quality report)."""
+    tables: list[dict[str, Any]] = []
+    s = sec.summary
+    inv_cls = "severity-error" if s.invalid_count > 0 else ""
+
+    summary_rows: list[list[dict[str, Any]]] = [
+        [
+            _cell("Valid"),
+            _cell(fmt_count(s.valid_count), cls="num"),
+            _cell(fmt_pct(s.valid_pct), cls="num", bar_pct=s.valid_pct, bar_cls="bar-green"),
+        ],
+        [
+            _cell("Invalid", cls=inv_cls),
+            _cell(fmt_count(s.invalid_count), cls=f"num {inv_cls}"),
+            _cell(fmt_pct(s.invalid_pct), cls=f"num {inv_cls}", bar_pct=s.invalid_pct, bar_cls="bar-red"),
+        ],
+        [
+            _cell("Absent"),
+            _cell(fmt_count(s.absent_count), cls="num"),
+            _cell(fmt_pct(s.absent_pct), cls="num"),
+        ],
+    ]
+    tables.append(
+        _table("Validation Summary", [_hdr("Status"), _hdr("Count", "num"), _hdr("%", "num")], summary_rows)
+    )
+
+    for extra_name, extra_rows in sec.extra.items():
+        if extra_rows:
+            ext_rows: list[list[dict[str, Any]]] = []
+            for er in extra_rows:
+                ext_rows.append([
+                    _cell(er.precision),
+                    _cell(fmt_count(er.count), cls="num"),
+                    _cell(fmt_pct(er.percentage), cls="num"),
+                ])
+            tables.append(
+                _table(extra_name.replace("_", " ").title(), [_hdr("Precision"), _hdr("Count", "num"), _hdr("%", "num")], ext_rows)
+            )
+
+    if sec.invalid_values:
+        iv_rows: list[list[dict[str, Any]]] = []
+        for iv in sec.invalid_values:
+            iv_rows.append([_cell(iv.value, cls="mono"), _cell(fmt_count(iv.count), cls="num")])
+        footer = None
+        if sec.invalid_values_total > len(sec.invalid_values):
+            footer = f"Showing top {len(sec.invalid_values)} of {sec.invalid_values_total} distinct invalid values."
+        tables.append(_table("Invalid Values", [_hdr("Value"), _hdr("Count", "num")], iv_rows, footer=footer))
+
+    return _section(f"Field: {sec.field_name}", tables=tables)
+
+
+def _build_id_section(id_section: Any) -> dict[str, Any]:
+    """Build an ID source section (MusicBrainz or Discogs) for the tag quality report."""
+    cov_rows: list[list[dict[str, Any]]] = []
+    for row in id_section.coverage:
+        mal_cls = "severity-error" if row.malformed_count > 0 else ""
+        cov_rows.append([
+            _cell(row.tag_key, cls="mono"),
+            _cell(fmt_count(row.valid_count), cls="num"),
+            _cell(fmt_pct(row.valid_pct), cls="num"),
+            _cell(fmt_count(row.malformed_count), cls=f"num {mal_cls}".strip()),
+            _cell(fmt_pct(row.malformed_pct), cls=f"num {mal_cls}".strip()),
+            _cell(fmt_count(row.absent_count), cls="num"),
+            _cell(fmt_pct(row.absent_pct), cls="num"),
+        ])
+    tables: list[dict[str, Any]] = [
+        _table("Coverage", [
+            _hdr("Tag Key"), _hdr("Valid", "num"), _hdr("Valid %", "num"),
+            _hdr("Malformed", "num"), _hdr("Malformed %", "num"),
+            _hdr("Absent", "num"), _hdr("Absent %", "num"),
+        ], cov_rows)
+    ]
+
+    if id_section.partial_albums:
+        pa_rows: list[list[dict[str, Any]]] = []
+        for pa in id_section.partial_albums:
+            pa_rows.append([
+                _cell(pa.album_dir, cls="path"),
+                _cell(pa.tracks_with_id, cls="num"),
+                _cell(pa.tracks_without_id, cls="num"),
+                _cell(pa.total_tracks, cls="num"),
+            ])
+        tables.append(_table(
+            f"Partial Album Coverage ({len(id_section.partial_albums)} albums)",
+            [_hdr("Album Directory"), _hdr("With ID", "num"), _hdr("Without ID", "num"), _hdr("Total", "num")],
+            pa_rows,
+        ))
+
+    if id_section.duplicate_ids:
+        dup_rows: list[list[dict[str, Any]]] = []
+        for d in id_section.duplicate_ids:
+            same_text = "Yes" if d.same_directory else "No"
+            same_cls = "severity-error" if d.same_directory else "severity-warning"
+            paths_str = "<br>".join(d.file_paths[:10])
+            if len(d.file_paths) > 10:
+                paths_str += f"<br>\u2026 +{len(d.file_paths) - 10} more"
+            dup_rows.append([
+                _cell(d.id_value, cls="mono"),
+                _cell(d.file_count, cls="num"),
+                _cell(same_text, cls=same_cls),
+                _cell(paths_str, cls="path"),
+            ])
+        tables.append(_table(
+            f"Duplicate IDs ({len(id_section.duplicate_ids)})",
+            [_hdr("ID Value"), _hdr("Files", "num"), _hdr("Same Dir?"), _hdr("Paths")],
+            dup_rows,
+        ))
+
+    text_blocks: list[dict[str, Any]] = []
+    if id_section.backfill:
+        bf = id_section.backfill
+        text_blocks.append(_text(
+            f"<strong>Quick-win backfill:</strong> {fmt_count(bf.affected_tracks)} tracks, "
+            f"{fmt_count(bf.distinct_source_ids)} API calls needed. {bf.description}"
+        ))
+
+    return _section(
+        f"{id_section.source_name} IDs",
+        tables=tables,
+        text_blocks=text_blocks or None,
+    )
+
+
+def build_tag_quality_sections(data: TagQualityFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
         _section(
-            "Tag Format Quality",
+            "Tag Quality & Integrity",
             summary_cards=[_card(fmt_count(data.total_files), "Total Files")],
         )
     )
 
-    for sec in data.sections:
-        tables: list[dict[str, Any]] = []
-        s = sec.summary
-        inv_cls = "severity-error" if s.invalid_count > 0 else ""
+    # Field format validation sections.
+    for sec in data.field_sections:
+        sections.append(_build_field_section(sec))
 
-        summary_rows: list[list[dict[str, Any]]] = [
-            [
-                _cell("Valid"),
-                _cell(fmt_count(s.valid_count), cls="num"),
-                _cell(
-                    fmt_pct(s.valid_pct),
-                    cls="num",
-                    bar_pct=s.valid_pct,
-                    bar_cls="bar-green",
-                ),
-            ],
-            [
-                _cell("Invalid", cls=inv_cls),
-                _cell(fmt_count(s.invalid_count), cls=f"num {inv_cls}"),
-                _cell(
-                    fmt_pct(s.invalid_pct),
-                    cls=f"num {inv_cls}",
-                    bar_pct=s.invalid_pct,
-                    bar_cls="bar-red",
-                ),
-            ],
-            [
-                _cell("Absent"),
-                _cell(fmt_count(s.absent_count), cls="num"),
-                _cell(fmt_pct(s.absent_pct), cls="num"),
-            ],
-        ]
-        tables.append(
-            _table(
-                "Validation Summary",
-                [_hdr("Status"), _hdr("Count", "num"), _hdr("%", "num")],
-                summary_rows,
-            )
-        )
-
-        for extra_name, extra_rows in sec.extra.items():
-            if extra_rows:
-                ext_rows: list[list[dict[str, Any]]] = []
-                for er in extra_rows:
-                    ext_rows.append(
-                        [
-                            _cell(er.precision),
-                            _cell(fmt_count(er.count), cls="num"),
-                            _cell(fmt_pct(er.percentage), cls="num"),
-                        ]
-                    )
-                tables.append(
-                    _table(
-                        extra_name.replace("_", " ").title(),
-                        [_hdr("Precision"), _hdr("Count", "num"), _hdr("%", "num")],
-                        ext_rows,
-                    )
-                )
-
-        if sec.invalid_values:
-            iv_rows: list[list[dict[str, Any]]] = []
-            for iv in sec.invalid_values:
-                iv_rows.append(
-                    [
-                        _cell(iv.value, cls="mono"),
-                        _cell(fmt_count(iv.count), cls="num"),
-                    ]
-                )
-            footer = None
-            if sec.invalid_values_total > len(sec.invalid_values):
-                footer = f"Showing top {len(sec.invalid_values)} of {sec.invalid_values_total} distinct invalid values."
-            tables.append(
-                _table(
-                    "Invalid Values",
-                    [_hdr("Value"), _hdr("Count", "num")],
-                    iv_rows,
-                    footer=footer,
-                )
-            )
-
-        sections.append(_section(f"Field: {sec.field_name}", tables=tables))
+    # External ID sections (MusicBrainz, Discogs).
+    sections.append(_build_id_section(data.musicbrainz))
+    sections.append(_build_id_section(data.discogs))
 
     return sections
 
@@ -888,124 +936,6 @@ def build_album_consistency_sections(
     return sections
 
 
-# =========================================================================
-# Report 7 — External ID coverage and integrity
-# =========================================================================
-
-
-def build_ids_sections(data: IdsFullData) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-
-    sections.append(
-        _section(
-            "External ID Coverage & Integrity",
-            summary_cards=[_card(fmt_count(data.total_files), "Total Files")],
-        )
-    )
-
-    for id_section in [data.musicbrainz, data.discogs]:
-        cov_rows: list[list[dict[str, Any]]] = []
-        for row in id_section.coverage:
-            mal_cls = "severity-error" if row.malformed_count > 0 else ""
-            cov_rows.append(
-                [
-                    _cell(row.tag_key, cls="mono"),
-                    _cell(fmt_count(row.valid_count), cls="num"),
-                    _cell(fmt_pct(row.valid_pct), cls="num"),
-                    _cell(fmt_count(row.malformed_count), cls=f"num {mal_cls}".strip()),
-                    _cell(fmt_pct(row.malformed_pct), cls=f"num {mal_cls}".strip()),
-                    _cell(fmt_count(row.absent_count), cls="num"),
-                    _cell(fmt_pct(row.absent_pct), cls="num"),
-                ]
-            )
-        tables: list[dict[str, Any]] = [
-            _table(
-                "Coverage",
-                [
-                    _hdr("Tag Key"),
-                    _hdr("Valid", "num"),
-                    _hdr("Valid %", "num"),
-                    _hdr("Malformed", "num"),
-                    _hdr("Malformed %", "num"),
-                    _hdr("Absent", "num"),
-                    _hdr("Absent %", "num"),
-                ],
-                cov_rows,
-            )
-        ]
-
-        if id_section.partial_albums:
-            pa_rows: list[list[dict[str, Any]]] = []
-            for pa in id_section.partial_albums:
-                pa_rows.append(
-                    [
-                        _cell(pa.album_dir, cls="path"),
-                        _cell(pa.tracks_with_id, cls="num"),
-                        _cell(pa.tracks_without_id, cls="num"),
-                        _cell(pa.total_tracks, cls="num"),
-                    ]
-                )
-            tables.append(
-                _table(
-                    f"Partial Album Coverage ({len(id_section.partial_albums)} albums)",
-                    [
-                        _hdr("Album Directory"),
-                        _hdr("With ID", "num"),
-                        _hdr("Without ID", "num"),
-                        _hdr("Total", "num"),
-                    ],
-                    pa_rows,
-                )
-            )
-
-        if id_section.duplicate_ids:
-            dup_rows: list[list[dict[str, Any]]] = []
-            for d in id_section.duplicate_ids:
-                same_text = "Yes" if d.same_directory else "No"
-                same_cls = "severity-error" if d.same_directory else "severity-warning"
-                paths_str = "<br>".join(d.file_paths[:10])
-                if len(d.file_paths) > 10:
-                    paths_str += f"<br>\u2026 +{len(d.file_paths) - 10} more"
-                dup_rows.append(
-                    [
-                        _cell(d.id_value, cls="mono"),
-                        _cell(d.file_count, cls="num"),
-                        _cell(same_text, cls=same_cls),
-                        _cell(paths_str, cls="path"),
-                    ]
-                )
-            tables.append(
-                _table(
-                    f"Duplicate IDs ({len(id_section.duplicate_ids)})",
-                    [
-                        _hdr("ID Value"),
-                        _hdr("Files", "num"),
-                        _hdr("Same Dir?"),
-                        _hdr("Paths"),
-                    ],
-                    dup_rows,
-                )
-            )
-
-        text_blocks: list[dict[str, Any]] = []
-        if id_section.backfill:
-            bf = id_section.backfill
-            text_blocks.append(
-                _text(
-                    f"<strong>Quick-win backfill:</strong> {fmt_count(bf.affected_tracks)} tracks, "
-                    f"{fmt_count(bf.distinct_source_ids)} API calls needed. {bf.description}"
-                )
-            )
-
-        sections.append(
-            _section(
-                f"{id_section.source_name} IDs",
-                tables=tables,
-                text_blocks=text_blocks or None,
-            )
-        )
-
-    return sections
 
 
 # =========================================================================
@@ -1876,9 +1806,8 @@ SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "overview": build_overview_sections,
     "technical": build_technical_sections,
     "tags": build_tag_coverage_sections,
-    "tag_formats": build_tag_formats_sections,
+    "tag_quality": build_tag_quality_sections,
     "album_consistency": build_album_consistency_sections,
-    "ids": build_ids_sections,
     "duplicates": build_duplicates_sections,
     "issues": build_issues_sections,
     "artists": build_artists_sections,

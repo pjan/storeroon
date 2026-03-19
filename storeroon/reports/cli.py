@@ -179,13 +179,12 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         artists,
         duplicates,
         genres,
-        ids,
         issues,
         lyrics,
         overview,
         replaygain,
         tag_coverage,
-        tag_formats,
+        tag_quality,
         technical,
     )
     from storeroon.reports.renderers.terminal import render_master_summary
@@ -210,19 +209,14 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         log.warning("Tag coverage summary failed: %s", exc)
 
     try:
-        summary.tag_formats = tag_formats.summary_data(conn)
+        summary.tag_quality = tag_quality.summary_data(conn)
     except Exception as exc:
-        log.warning("Tag formats summary failed: %s", exc)
+        log.warning("Tag quality summary failed: %s", exc)
 
     try:
         summary.album_consistency = album_consistency.summary_data(conn)
     except Exception as exc:
         log.warning("Album consistency summary failed: %s", exc)
-
-    try:
-        summary.ids = ids.summary_data(conn)
-    except Exception as exc:
-        log.warning("IDs summary failed: %s", exc)
 
     try:
         summary.duplicates = duplicates.summary_data(conn)
@@ -360,8 +354,8 @@ def _cmd_tags(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_tag_formats(args: argparse.Namespace) -> int:
-    """Execute ``report tag-formats``."""
+def _cmd_tag_quality(args: argparse.Namespace) -> int:
+    """Execute ``report tag-quality``."""
     conf = _load_config(args)
     if conf is None:
         return 1
@@ -383,17 +377,17 @@ def _cmd_tag_formats(args: argparse.Namespace) -> int:
         conn.close()
         return 0
 
-    from storeroon.reports.queries import tag_formats
-    from storeroon.reports.renderers.terminal import render_tag_formats
+    from storeroon.reports.queries import tag_quality
+    from storeroon.reports.renderers.terminal import render_tag_quality
 
-    data = tag_formats.full_data(conn, artist_filter=artist_filter)
+    data = tag_quality.full_data(conn, artist_filter=artist_filter)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        render_tag_formats(output_console, data)
+        render_tag_quality(output_console, data)
     else:
         filters = {"artist": artist_filter}
-        _write_json(args, conf, "tag_formats", data, filters=filters)
+        _write_json(args, conf, "tag_quality", data, filters=filters)
 
     conn.close()
     return 0
@@ -433,45 +427,6 @@ def _cmd_album_consistency(args: argparse.Namespace) -> int:
     else:
         filters = {"artist": artist_filter}
         _write_json(args, conf, "album_consistency", data, filters=filters)
-
-    conn.close()
-    return 0
-
-
-def _cmd_ids(args: argparse.Namespace) -> int:
-    """Execute ``report ids``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    artist_filter = _get_artist_filter(args)
-    if artist_filter and not _check_artist_has_results(conn, artist_filter):
-        output_console.print("[yellow]No tracks matched the given filters.[/yellow]")
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import ids
-    from storeroon.reports.renderers.terminal import render_ids
-
-    data = ids.full_data(conn, artist_filter=artist_filter)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_ids(output_console, data)
-    else:
-        filters = {"artist": artist_filter}
-        _write_json(args, conf, "ids", data, filters=filters)
 
     conn.close()
     return 0
@@ -713,13 +668,12 @@ def _cmd_all(args: argparse.Namespace) -> int:
         artists,
         duplicates,
         genres,
-        ids,
         issues,
         lyrics,
         overview,
         replaygain,
         tag_coverage,
-        tag_formats,
+        tag_quality,
         technical,
     )
     from storeroon.reports.renderers.json_renderer import write_report
@@ -729,9 +683,8 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ("Overview", "overview", lambda: overview.full_data(conn)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
-        ("Tag formats", "tag_formats", lambda: tag_formats.full_data(conn)),
+        ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn)),
         ("Album consistency", "album_consistency", lambda: album_consistency.full_data(conn)),
-        ("External IDs", "ids", lambda: ids.full_data(conn)),
         ("Duplicates", "duplicates", lambda: duplicates.full_data(conn)),
         ("Scan issues", "issues", lambda: issues.full_data(conn)),
         ("Artists", "artists", lambda: artists.full_data(conn, fuzzy_threshold=threshold)),
@@ -741,7 +694,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
     ]
 
     for i, (label, name, query_fn) in enumerate(report_specs, 1):
-        console.print(f"[dim]  {i:2d}/12  {label}…[/dim]")
+        console.print(f"[dim]  {i:2d}/11  {label}…[/dim]")
         try:
             data = query_fn()
             path = write_report(output_dir, name, data)
@@ -765,9 +718,8 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "overview": _cmd_overview,
     "technical": _cmd_technical,
     "tags": _cmd_tags,
-    "tag-formats": _cmd_tag_formats,
+    "tag-quality": _cmd_tag_quality,
     "album-consistency": _cmd_album_consistency,
-    "ids": _cmd_ids,
     "duplicates": _cmd_duplicates,
     "issues": _cmd_issues,
     "artists": _cmd_artists,
@@ -889,14 +841,14 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_output_args(p_tags)
     _add_config_arg(p_tags)
 
-    # --- tag-formats ---
-    p_tag_formats = report_subs.add_parser(
-        "tag-formats",
-        help="Tag format quality: date, track number, ISRC, MBID validation",
+    # --- tag-quality ---
+    p_tag_quality = report_subs.add_parser(
+        "tag-quality",
+        help="Tag quality and integrity: format validation, external ID coverage",
     )
-    _add_output_args(p_tag_formats)
-    _add_artist_args(p_tag_formats)
-    _add_config_arg(p_tag_formats)
+    _add_output_args(p_tag_quality)
+    _add_artist_args(p_tag_quality)
+    _add_config_arg(p_tag_quality)
 
     # --- album-consistency ---
     p_album_consistency = report_subs.add_parser(
@@ -906,15 +858,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_output_args(p_album_consistency)
     _add_artist_args(p_album_consistency)
     _add_config_arg(p_album_consistency)
-
-    # --- ids ---
-    p_ids = report_subs.add_parser(
-        "ids",
-        help="External ID coverage and integrity (MusicBrainz, Discogs)",
-    )
-    _add_output_args(p_ids)
-    _add_artist_args(p_ids)
-    _add_config_arg(p_ids)
 
     # --- duplicates ---
     p_duplicates = report_subs.add_parser(
