@@ -131,16 +131,14 @@ def _alias_usage(
     """Check value consistency for alias pairs where the canonical key
     is in the required or recommended config lists.
 
-    For each qualifying alias pair, finds all files that have either key
-    (or both) and checks whether the values are consistent.  A file is
-    consistent if both keys are present with the same value, or if only
-    the canonical key is present.  A file is inconsistent if: only the
-    alias is present (canonical missing), or both are present but differ.
-    A healthy collection has 100% consistency.
+    For each qualifying alias pair, looks at all files that have the
+    canonical key set.  Of those, what percentage also have the alias
+    key set to the exact same value?  A healthy collection has 100%
+    consistency — every file with the canonical tag also has the alias
+    tag with a matching value.
     """
     result: list[AliasUsageRow] = []
     for alias_key, canonical_key in sorted(aliases.items()):
-        # Only include pairs where the canonical target is required or recommended.
         if canonical_key not in canonical_keys:
             continue
 
@@ -148,23 +146,19 @@ def _alias_usage(
             _ALIAS_CONSISTENCY_SQL, (canonical_key, alias_key)
         ).fetchall()
 
-        if not rows:
+        # Only count files that have the canonical key present.
+        files_with_canonical = [
+            r for r in rows if r["canonical_value"] is not None
+        ]
+        if not files_with_canonical:
             continue
 
-        total = len(rows)
-        consistent = 0
-        for r in rows:
-            canon_val = r["canonical_value"]
-            alias_val = r["alias_value"]
-            if canon_val is not None and alias_val is None:
-                # Only canonical present — fine
-                consistent += 1
-            elif canon_val is not None and alias_val is not None:
-                # Both present — consistent if values match
-                if canon_val.strip() == alias_val.strip():
-                    consistent += 1
-            # alias_val present but canon_val is None → inconsistent
-            # both present but differ → inconsistent
+        total = len(files_with_canonical)
+        consistent = sum(
+            1 for r in files_with_canonical
+            if r["alias_value"] is not None
+            and r["canonical_value"].strip() == r["alias_value"].strip()
+        )
 
         result.append(
             AliasUsageRow(
