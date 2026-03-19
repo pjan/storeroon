@@ -305,6 +305,8 @@ def _analyse_field(
             continue
         seen_file_ids.add(fid)
         value = r["tag_value"]
+        if not value or not value.strip():
+            continue  # empty/whitespace → counted as absent, not invalid
         if validator(value):
             valid_count += 1
         else:
