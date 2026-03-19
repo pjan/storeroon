@@ -514,37 +514,28 @@ def _coverage_table_rows(
     group_data: list[TagCoverageRow],
     severity_threshold: str = "",
 ) -> list[list[dict[str, Any]]]:
-    """Build table rows for a tag coverage group with coverage % bars.
+    """Build table rows for a tag coverage group.
 
-    severity_threshold: "required" colours any missing as error,
-    "recommended" colours >20% missing as warning.
+    Columns: Tag Key | Coverage (bar + %) | Present
     """
     rows: list[list[dict[str, Any]]] = []
     for row in group_data:
-        missing_cls = ""
+        bar_cls = "bar-green"
         if severity_threshold == "required" and row.missing_count > 0:
-            missing_cls = "severity-error"
+            bar_cls = "bar-red"
         elif severity_threshold == "recommended" and row.missing_pct > 20.0:
-            missing_cls = "severity-warning"
+            bar_cls = "bar-yellow"
 
         rows.append(
             [
                 _cell(row.tag_key, cls="mono"),
-                _cell(fmt_count(row.present_count), cls="num"),
                 _cell(
                     fmt_pct(row.present_pct),
                     cls="num",
                     bar_pct=row.present_pct,
-                    bar_cls="bar-green" if row.present_pct > 0 else None,
+                    bar_cls=bar_cls,
                 ),
-                _cell(
-                    fmt_count(row.missing_count),
-                    cls=f"num {missing_cls}".strip(),
-                ),
-                _cell(
-                    fmt_pct(row.missing_pct),
-                    cls=f"num {missing_cls}".strip(),
-                ),
+                _cell(fmt_count(row.present_count), cls="num"),
             ]
         )
     return rows
@@ -552,10 +543,8 @@ def _coverage_table_rows(
 
 _COV_HEADERS = [
     _hdr("Tag Key"),
-    _hdr("Present", "num"),
     _hdr("Coverage", "num"),
-    _hdr("Missing", "num"),
-    _hdr("Missing %", "num"),
+    _hdr("Present", "num"),
 ]
 
 
@@ -582,26 +571,32 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
     if data.alias_usage:
         alias_rows: list[list[dict[str, Any]]] = []
         for row in data.alias_usage:
-            cls = "severity-warning" if row.files_using_alias > 0 else "dim"
+            mismatch_cls = "severity-error" if row.files_mismatched > 0 else ""
             alias_rows.append(
                 [
                     _cell(row.canonical_key, cls="mono"),
-                    _cell(row.alias_key, cls=f"mono {cls}"),
-                    _cell(fmt_count(row.files_using_alias), cls=f"num {cls}"),
-                    _cell(fmt_pct(row.files_using_alias_pct), cls=f"num {cls}"),
+                    _cell(row.alias_key, cls="mono"),
+                    _cell(fmt_count(row.files_with_both), cls="num"),
+                    _cell(fmt_count(row.files_matching), cls="num"),
+                    _cell(
+                        fmt_count(row.files_mismatched),
+                        cls=f"num {mismatch_cls}".strip(),
+                    ),
                 ]
             )
         sections.append(
             _section(
-                "Alias Usage",
+                "Alias Consistency",
+                note="Files where both canonical and alias tags are present. Mismatches indicate conflicting values.",
                 tables=[
                     _table(
                         None,
                         [
                             _hdr("Canonical Key"),
-                            _hdr("Alias"),
-                            _hdr("Files Using Alias", "num"),
-                            _hdr("%", "num"),
+                            _hdr("Alias Key"),
+                            _hdr("Both Present", "num"),
+                            _hdr("Matching", "num"),
+                            _hdr("Mismatched", "num"),
                         ],
                         alias_rows,
                     )

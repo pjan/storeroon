@@ -390,46 +390,44 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
         _subsection_heading(console, group_name)
         table = Table(show_header=True, header_style="bold")
         table.add_column("Tag Key", style="cyan")
-        table.add_column("Present", justify="right")
-        table.add_column("Coverage", justify="right")
-        table.add_column("Missing", justify="right")
-        table.add_column("Missing %", justify="right")
         table.add_column("", min_width=20)
+        table.add_column("Coverage", justify="right")
+        table.add_column("Present", justify="right")
 
         for row in group_data:
-            missing_style = ""
+            bar_color = "green"
             if severity == "required" and row.missing_count > 0:
-                missing_style = "bold red"
+                bar_color = "red"
             elif severity == "recommended" and row.missing_pct > 20.0:
-                missing_style = "yellow"
+                bar_color = "yellow"
 
             chart = bar_chart(row.present_pct, 100.0, width=20)
             table.add_row(
                 row.tag_key,
-                fmt_count(row.present_count),
+                f"[{bar_color}]{chart}[/{bar_color}]",
                 fmt_pct(row.present_pct),
-                Text(fmt_count(row.missing_count), style=missing_style),
-                Text(fmt_pct(row.missing_pct), style=missing_style),
-                f"[green]{chart}[/green]",
+                fmt_count(row.present_count),
             )
         console.print(table)
 
-    # Alias usage.
+    # Alias consistency.
     if data.alias_usage:
-        _subsection_heading(console, "Alias Usage")
+        _subsection_heading(console, "Alias Consistency")
         alias_table = Table(show_header=True, header_style="bold")
         alias_table.add_column("Canonical Key", style="cyan")
-        alias_table.add_column("Alias Found")
-        alias_table.add_column("Files Using Alias", justify="right")
-        alias_table.add_column("%", justify="right")
+        alias_table.add_column("Alias Key")
+        alias_table.add_column("Both Present", justify="right")
+        alias_table.add_column("Matching", justify="right")
+        alias_table.add_column("Mismatched", justify="right")
 
         for row in data.alias_usage:
-            style = "yellow" if row.files_using_alias > 0 else "dim"
+            mismatch_style = "bold red" if row.files_mismatched > 0 else ""
             alias_table.add_row(
                 row.canonical_key,
-                Text(row.alias_key, style=style),
-                Text(fmt_count(row.files_using_alias), style=style),
-                Text(fmt_pct(row.files_using_alias_pct), style=style),
+                row.alias_key,
+                fmt_count(row.files_with_both),
+                fmt_count(row.files_matching),
+                Text(fmt_count(row.files_mismatched), style=mismatch_style),
             )
         console.print(alias_table)
 

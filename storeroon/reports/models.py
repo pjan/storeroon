@@ -37,12 +37,17 @@ class TagCoverageRow:
 
 @dataclass(frozen=True, slots=True)
 class AliasUsageRow:
-    """Counts for a single alias→canonical mapping."""
+    """Consistency check for a canonical/alias tag pair.
+
+    Tracks files where both the canonical and alias key are present,
+    and how many of those have matching values.
+    """
 
     canonical_key: str
     alias_key: str
-    files_using_alias: int
-    files_using_alias_pct: float
+    files_with_both: int  # files where both keys are present
+    files_matching: int  # of those, values match
+    files_mismatched: int  # of those, values differ
 
 
 @dataclass(frozen=True, slots=True)
