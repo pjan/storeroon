@@ -15,9 +15,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from rich.tree import Tree
+
 from storeroon.reports.models import (
     AlbumConsistencyFullData,
     AlbumConsistencySummaryData,
+    ArtistBreakdown,
     ArtistsFullData,
     ArtistsSummaryData,
     BucketCount,
@@ -114,6 +117,14 @@ def _no_results_message(console: Console) -> None:
 # =========================================================================
 
 
+def _stats_label(tracks: int, discs: int, size: int, duration: float) -> str:
+    """Format a compact stats label for a tree node."""
+    return (
+        f"{fmt_count(tracks)} tracks · {fmt_count(discs)} discs · "
+        f"{fmt_size_gb(size)} · {fmt_duration_hms(duration)}"
+    )
+
+
 def render_overview(console: Console, data: OverviewFullData) -> None:
     """Render the full collection overview report."""
     if data.totals.total_tracks == 0:
@@ -128,37 +139,41 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
     totals_table.add_column("Metric", style="bold")
     totals_table.add_column("Value", justify="right")
     totals_table.add_row("Total tracks", fmt_count(t.total_tracks))
-    totals_table.add_row("Unique album artists", fmt_count(t.total_artists))
-    totals_table.add_row("Albums", fmt_count(t.total_albums))
+    totals_table.add_row("Artists", fmt_count(t.total_artists))
+    totals_table.add_row("Discs", fmt_count(t.total_discs))
     totals_table.add_row("Total duration", fmt_duration_hms(t.total_duration_seconds))
     totals_table.add_row("Total size", fmt_size_gb(t.total_size_bytes))
     console.print(totals_table)
 
-    # Table 2: Breakdown by release type.
-    if data.by_release_type:
-        _subsection_heading(console, "Breakdown by Release Type")
-        rt_table = Table(show_header=True, header_style="bold")
-        rt_table.add_column("Type", style="cyan")
-        rt_table.add_column("Tracks", justify="right")
-        rt_table.add_column("Albums", justify="right")
-        rt_table.add_column("Size", justify="right")
-        rt_table.add_column("Duration", justify="right")
-        rt_table.add_column("Avg Album Dur", justify="right")
-        rt_table.add_column("Avg Track Dur", justify="right")
-
-        for rt in data.by_release_type:
-            rt_table.add_row(
-                rt.release_type,
-                fmt_count(rt.track_count),
-                fmt_count(rt.album_count),
-                fmt_size_gb(rt.total_size_bytes),
-                fmt_duration_hms(rt.total_duration_seconds),
-                fmt_duration_short(rt.avg_album_duration_seconds),
-                fmt_duration_short(rt.avg_track_duration_seconds),
+    # Tree: Hierarchical breakdown.
+    if data.by_artist:
+        _subsection_heading(console, "Collection Breakdown")
+        tree = Tree(f"[bold]{fmt_count(t.total_artists)} artists[/bold]")
+        for a in data.by_artist:
+            artist_node = tree.add(
+                f"[cyan bold]{a.artist}[/cyan bold]  [dim]{_stats_label(a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds)}[/dim]"
             )
-        console.print(rt_table)
+            for ft in a.folder_types:
+                ft_node = artist_node.add(
+                    f"[green]{ft.folder_type}[/green]  [dim]{_stats_label(ft.track_count, ft.disc_count, ft.total_size_bytes, ft.total_duration_seconds)}[/dim]"
+                )
+                for rg in ft.release_groups:
+                    if len(rg.pressings) == 1:
+                        p = rg.pressings[0]
+                        ft_node.add(
+                            f"{rg.release_group}  [dim]{_stats_label(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}[/dim]"
+                        )
+                    else:
+                        rg_node = ft_node.add(
+                            f"{rg.release_group}  [dim]{_stats_label(rg.track_count, rg.disc_count, rg.total_size_bytes, rg.total_duration_seconds)}[/dim]"
+                        )
+                        for p in rg.pressings:
+                            rg_node.add(
+                                f"[dim]{p.pressing_name}  {_stats_label(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}[/dim]"
+                            )
+        console.print(tree)
 
-    # Table 3: Distribution summary.
+    # Distribution summary.
     _subsection_heading(console, "Distribution Summary")
     dist = data.distribution
     dist_table = Table(show_header=False, min_width=40)
@@ -187,8 +202,8 @@ def render_overview_summary(console: Console, data: OverviewSummaryData) -> None
     table.add_column("Metric", style="bold")
     table.add_column("Value", justify="right")
     table.add_row("Tracks", fmt_count(t.total_tracks))
-    table.add_row("Album artists", fmt_count(t.total_artists))
-    table.add_row("Albums", fmt_count(t.total_albums))
+    table.add_row("Artists", fmt_count(t.total_artists))
+    table.add_row("Discs", fmt_count(t.total_discs))
     table.add_row("Duration", fmt_duration_hms(t.total_duration_seconds))
     table.add_row("Size", fmt_size_gb(t.total_size_bytes))
     console.print(table)

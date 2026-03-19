@@ -98,23 +98,58 @@ class OverviewTotals:
     """Top-level collection totals."""
 
     total_tracks: int
-    total_artists: int  # unique ALBUMARTIST values
-    total_albums: int  # unique ALBUMARTIST+ALBUM combinations
+    total_artists: int  # unique artist path segments
+    total_discs: int  # distinct album_dir paths (pressing folders)
     total_duration_seconds: float
     total_size_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
-class ReleaseTypeBreakdown:
-    """Breakdown for a single release type (Albums / EPs / etc.)."""
+class PressingBreakdown:
+    """Innermost level: a specific pressing/catalog folder."""
 
-    release_type: str
+    pressing_dir: str  # full album_dir path
+    pressing_name: str  # just the segment 4 folder name
     track_count: int
-    album_count: int
+    disc_count: int  # distinct DISCNUMBER values within this pressing
     total_size_bytes: int
     total_duration_seconds: float
-    avg_album_duration_seconds: float
-    avg_track_duration_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseGroupBreakdown:
+    """A release group (e.g. '1969 - Abbey Road'), may contain multiple pressings."""
+
+    release_group: str  # segment 3 folder name
+    track_count: int
+    disc_count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+    pressings: list[PressingBreakdown]
+
+
+@dataclass(frozen=True, slots=True)
+class FolderTypeBreakdown:
+    """A folder type (Albums, EPs, etc.) within an artist."""
+
+    folder_type: str  # segment 2
+    track_count: int
+    disc_count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+    release_groups: list[ReleaseGroupBreakdown]
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistBreakdown:
+    """Top-level: breakdown per artist."""
+
+    artist: str  # segment 1
+    track_count: int
+    disc_count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+    folder_types: list[FolderTypeBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +167,7 @@ class OverviewFullData:
     """Complete data for the collection overview report."""
 
     totals: OverviewTotals
-    by_release_type: list[ReleaseTypeBreakdown]
+    by_artist: list[ArtistBreakdown]
     distribution: DistributionSummary
 
 

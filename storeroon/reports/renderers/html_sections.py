@@ -15,14 +15,18 @@ from typing import Any
 
 from storeroon.reports.models import (
     AlbumConsistencyFullData,
+    ArtistBreakdown,
     ArtistsFullData,
     BucketCount,
     DuplicatesFullData,
+    FolderTypeBreakdown,
     GenresFullData,
     IdsFullData,
     IssuesFullData,
     LyricsFullData,
     OverviewFullData,
+    PressingBreakdown,
+    ReleaseGroupBreakdown,
     ReplayGainFullData,
     TagCoverageFullData,
     TagFormatsFullData,
@@ -161,6 +165,58 @@ def _bucket_table(
 # =========================================================================
 
 
+def _stats_cols(tracks: int, discs: int, size: int, duration: float) -> str:
+    """Format the right-hand stats for a hierarchy row."""
+    return (
+        f'<span class="num" style="display:inline-block;min-width:5em">{fmt_count(tracks)} tracks</span>'
+        f' &nbsp; <span class="num" style="display:inline-block;min-width:4em">{fmt_count(discs)} discs</span>'
+        f' &nbsp; <span class="num" style="display:inline-block;min-width:5em">{fmt_size_gb(size)}</span>'
+        f' &nbsp; <span class="num" style="display:inline-block;min-width:6em">{fmt_duration_hms(duration)}</span>'
+    )
+
+
+def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
+    """Build nested <details> HTML for the artist hierarchy."""
+    parts: list[str] = []
+    for a in artists:
+        parts.append(
+            f'<details><summary style="cursor:pointer;padding:0.3rem 0">'
+            f'<strong>{a.artist}</strong> &mdash; {_stats_cols(a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds)}'
+            f'</summary><div style="margin-left:1.5rem">'
+        )
+        for ft in a.folder_types:
+            parts.append(
+                f'<details><summary style="cursor:pointer;padding:0.2rem 0">'
+                f'{ft.folder_type} &mdash; {_stats_cols(ft.track_count, ft.disc_count, ft.total_size_bytes, ft.total_duration_seconds)}'
+                f'</summary><div style="margin-left:1.5rem">'
+            )
+            for rg in ft.release_groups:
+                if len(rg.pressings) == 1:
+                    # Single pressing — no need for another expand level
+                    p = rg.pressings[0]
+                    parts.append(
+                        f'<div style="padding:0.15rem 0">'
+                        f'{rg.release_group} &mdash; {_stats_cols(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}'
+                        f'</div>'
+                    )
+                else:
+                    parts.append(
+                        f'<details><summary style="cursor:pointer;padding:0.15rem 0">'
+                        f'{rg.release_group} &mdash; {_stats_cols(rg.track_count, rg.disc_count, rg.total_size_bytes, rg.total_duration_seconds)}'
+                        f'</summary><div style="margin-left:1.5rem">'
+                    )
+                    for p in rg.pressings:
+                        parts.append(
+                            f'<div style="padding:0.1rem 0;color:var(--dim);font-size:0.9em">'
+                            f'{p.pressing_name} &mdash; {_stats_cols(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}'
+                            f'</div>'
+                        )
+                    parts.append('</div></details>')
+            parts.append('</div></details>')
+        parts.append('</div></details>')
+    return "\n".join(parts)
+
+
 def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
@@ -170,46 +226,20 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
             "Collection Totals",
             summary_cards=[
                 _card(fmt_count(t.total_tracks), "Tracks"),
-                _card(fmt_count(t.total_artists), "Album Artists"),
-                _card(fmt_count(t.total_albums), "Albums"),
+                _card(fmt_count(t.total_artists), "Artists"),
+                _card(fmt_count(t.total_discs), "Discs"),
                 _card(fmt_duration_hms(t.total_duration_seconds), "Duration"),
                 _card(fmt_size_gb(t.total_size_bytes), "Size"),
             ],
         )
     )
 
-    if data.by_release_type:
-        rows: list[list[dict[str, Any]]] = []
-        for rt in data.by_release_type:
-            rows.append(
-                [
-                    _cell(rt.release_type),
-                    _cell(fmt_count(rt.track_count), cls="num"),
-                    _cell(fmt_count(rt.album_count), cls="num"),
-                    _cell(fmt_size_gb(rt.total_size_bytes), cls="num"),
-                    _cell(fmt_duration_hms(rt.total_duration_seconds), cls="num"),
-                    _cell(fmt_duration_short(rt.avg_album_duration_seconds), cls="num"),
-                    _cell(fmt_duration_short(rt.avg_track_duration_seconds), cls="num"),
-                ]
-            )
+    if data.by_artist:
+        hierarchy_html = _build_hierarchy_html(data.by_artist)
         sections.append(
             _section(
-                "Breakdown by Release Type",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("Type"),
-                            _hdr("Tracks", "num"),
-                            _hdr("Albums", "num"),
-                            _hdr("Size", "num"),
-                            _hdr("Duration", "num"),
-                            _hdr("Avg Album Dur", "num"),
-                            _hdr("Avg Track Dur", "num"),
-                        ],
-                        rows,
-                    )
-                ],
+                f"Collection Breakdown ({fmt_count(t.total_artists)} artists)",
+                text_blocks=[_text(hierarchy_html)],
             )
         )
 

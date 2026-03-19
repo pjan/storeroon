@@ -2,7 +2,7 @@
 storeroon.reports.queries.overview — Report 1: Collection overview.
 
 Aggregate queries against ``files``, ``flac_properties``, and ``raw_tags``.
-Groups by release type directory component (second path segment).
+Builds a hierarchical breakdown: Artist → Folder type → Release group → Pressing.
 
 Public API:
     full_data(conn) -> OverviewFullData
@@ -12,42 +12,38 @@ Public API:
 from __future__ import annotations
 
 import sqlite3
+from collections import defaultdict
 
 from storeroon.reports.models import (
+    ArtistBreakdown,
     DistributionSummary,
+    FolderTypeBreakdown,
     OverviewFullData,
     OverviewSummaryData,
     OverviewTotals,
-    ReleaseTypeBreakdown,
+    PressingBreakdown,
+    ReleaseGroupBreakdown,
 )
 from storeroon.reports.utils import median, safe_div
 
 # ---------------------------------------------------------------------------
-# SQL fragments
+# Path segment helpers
 # ---------------------------------------------------------------------------
 
-# Extract the release type (second path segment, e.g. "Albums", "EPs").
-# Paths in the DB use forward slashes: "Artist/Albums/…/01 Track.flac"
-_RELEASE_TYPE_EXPR = """
-    CASE
-        WHEN INSTR(path, '/') > 0
-        THEN SUBSTR(
-            path,
-            INSTR(path, '/') + 1,
-            CASE
-                WHEN INSTR(SUBSTR(path, INSTR(path, '/') + 1), '/') > 0
-                THEN INSTR(SUBSTR(path, INSTR(path, '/') + 1), '/') - 1
-                ELSE LENGTH(path)
-            END
-        )
-        ELSE 'Unknown'
-    END
-"""
 
-# Album directory: everything up to (but not including) the filename.
-_ALBUM_DIR_EXPR = """
-    SUBSTR(path, 1, LENGTH(path) - LENGTH(filename) - 1)
-"""
+def _split_path(path: str) -> tuple[str, str, str, str]:
+    """Split a file path into (artist, folder_type, release_group, pressing).
+
+    Expects: ``artist/folder_type/release_group/pressing/filename.flac``
+    Returns four segment names. Missing segments default to 'Unknown'.
+    """
+    parts = path.split("/")
+    artist = parts[0] if len(parts) > 0 else "Unknown"
+    folder_type = parts[1] if len(parts) > 1 else "Unknown"
+    release_group = parts[2] if len(parts) > 2 else "Unknown"
+    pressing = parts[3] if len(parts) > 3 else "Unknown"
+    return artist, folder_type, release_group, pressing
+
 
 # ---------------------------------------------------------------------------
 # Top-level totals
@@ -55,77 +51,157 @@ _ALBUM_DIR_EXPR = """
 
 _TOTALS_SQL = """
 SELECT
-    COUNT(*)                                          AS total_tracks,
-    COUNT(DISTINCT aa.albumartist)                    AS total_artists,
-    COUNT(DISTINCT aa.albumartist || '|||' || aa.album) AS total_albums,
-    COALESCE(SUM(fp.duration_seconds), 0.0)           AS total_duration,
-    COALESCE(SUM(f.size_bytes), 0)                    AS total_size
+    COUNT(*)                                              AS total_tracks,
+    COALESCE(SUM(fp.duration_seconds), 0.0)               AS total_duration,
+    COALESCE(SUM(f.size_bytes), 0)                        AS total_size
 FROM files f
 LEFT JOIN flac_properties fp ON fp.file_id = f.id
-LEFT JOIN (
-    SELECT
-        rt1.file_id,
-        MAX(CASE WHEN rt1.tag_key_upper = 'ALBUMARTIST' THEN rt1.tag_value END) AS albumartist,
-        MAX(CASE WHEN rt1.tag_key_upper = 'ALBUM'       THEN rt1.tag_value END) AS album
-    FROM raw_tags rt1
-    WHERE rt1.tag_key_upper IN ('ALBUMARTIST', 'ALBUM')
-    GROUP BY rt1.file_id
-) aa ON aa.file_id = f.id
+WHERE f.status = 'ok'
+"""
+
+_ALBUM_DIR_EXPR = "SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1)"
+
+_DISTINCT_ARTISTS_SQL = f"""
+SELECT COUNT(DISTINCT SUBSTR(f.path, 1, INSTR(f.path, '/') - 1))
+FROM files f
+WHERE f.status = 'ok'
+"""
+
+_DISTINCT_DISCS_SQL = f"""
+SELECT COUNT(DISTINCT {_ALBUM_DIR_EXPR})
+FROM files f
 WHERE f.status = 'ok'
 """
 
 
 def _query_totals(conn: sqlite3.Connection) -> OverviewTotals:
     row = conn.execute(_TOTALS_SQL).fetchone()
+    artists = conn.execute(_DISTINCT_ARTISTS_SQL).fetchone()[0]
+    discs = conn.execute(_DISTINCT_DISCS_SQL).fetchone()[0]
     return OverviewTotals(
         total_tracks=row["total_tracks"],
-        total_artists=row["total_artists"],
-        total_albums=row["total_albums"],
+        total_artists=artists,
+        total_discs=discs,
         total_duration_seconds=row["total_duration"] or 0.0,
         total_size_bytes=row["total_size"] or 0,
     )
 
 
 # ---------------------------------------------------------------------------
-# Breakdown by release type
+# Hierarchical breakdown: Artist → Folder type → Release group → Pressing
 # ---------------------------------------------------------------------------
 
-_BY_RELEASE_TYPE_SQL = f"""
+_FILES_SQL = """
 SELECT
-    {_RELEASE_TYPE_EXPR}                              AS release_type,
-    COUNT(*)                                          AS track_count,
-    COUNT(DISTINCT {_ALBUM_DIR_EXPR})                 AS album_count,
-    COALESCE(SUM(f.size_bytes), 0)                    AS total_size,
-    COALESCE(SUM(fp.duration_seconds), 0.0)           AS total_duration,
-    COALESCE(AVG(fp.duration_seconds), 0.0)           AS avg_track_duration
+    f.path,
+    f.filename,
+    f.size_bytes,
+    fp.duration_seconds,
+    COALESCE(dn.disc_number, '1') AS disc_number
 FROM files f
 LEFT JOIN flac_properties fp ON fp.file_id = f.id
+LEFT JOIN (
+    SELECT file_id, tag_value AS disc_number
+    FROM raw_tags
+    WHERE tag_key_upper = 'DISCNUMBER'
+      AND tag_index = 0
+) dn ON dn.file_id = f.id
 WHERE f.status = 'ok'
-GROUP BY release_type
-ORDER BY track_count DESC
 """
 
 
-def _query_by_release_type(conn: sqlite3.Connection) -> list[ReleaseTypeBreakdown]:
-    rows = conn.execute(_BY_RELEASE_TYPE_SQL).fetchall()
-    result: list[ReleaseTypeBreakdown] = []
-    for r in rows:
-        track_count = r["track_count"]
-        album_count = r["album_count"]
-        total_duration = r["total_duration"] or 0.0
-        avg_album_dur = safe_div(total_duration, album_count)
-        avg_track_dur = r["avg_track_duration"] or 0.0
+def _query_hierarchy(conn: sqlite3.Connection) -> list[ArtistBreakdown]:
+    """Build the full 4-level hierarchy from file paths."""
+    rows = conn.execute(_FILES_SQL).fetchall()
+
+    # Accumulate data per pressing (artist, folder_type, release_group, pressing)
+    # For each pressing, collect: track_count, size, duration, disc_numbers
+    PressKey = tuple[str, str, str, str]  # (artist, folder_type, release_group, pressing)
+
+    pressing_tracks: dict[PressKey, int] = defaultdict(int)
+    pressing_size: dict[PressKey, int] = defaultdict(int)
+    pressing_duration: dict[PressKey, float] = defaultdict(float)
+    pressing_discs: dict[PressKey, set[str]] = defaultdict(set)
+    pressing_dirs: dict[PressKey, str] = {}
+
+    for row in rows:
+        path: str = row["path"]
+        filename: str = row["filename"]
+        size: int = row["size_bytes"] or 0
+        duration: float = row["duration_seconds"] or 0.0
+        disc_num: str = row["disc_number"] or "1"
+
+        artist, folder_type, release_group, pressing = _split_path(path)
+        key: PressKey = (artist, folder_type, release_group, pressing)
+
+        pressing_tracks[key] += 1
+        pressing_size[key] += size
+        pressing_duration[key] += duration
+        pressing_discs[key].add(disc_num)
+
+        if key not in pressing_dirs:
+            # album_dir = path without filename
+            album_dir = path[: len(path) - len(filename) - 1] if filename else path
+            pressing_dirs[key] = album_dir
+
+    # Build bottom-up: Pressing → ReleaseGroup → FolderType → Artist
+
+    # Group pressings by (artist, folder_type, release_group)
+    rg_groups: dict[tuple[str, str, str], list[PressingBreakdown]] = defaultdict(list)
+    for key in sorted(pressing_tracks.keys()):
+        artist, folder_type, release_group, pressing_name = key
+        pb = PressingBreakdown(
+            pressing_dir=pressing_dirs.get(key, ""),
+            pressing_name=pressing_name,
+            track_count=pressing_tracks[key],
+            disc_count=len(pressing_discs[key]),
+            total_size_bytes=pressing_size[key],
+            total_duration_seconds=pressing_duration[key],
+        )
+        rg_groups[(artist, folder_type, release_group)].append(pb)
+
+    # Group release groups by (artist, folder_type)
+    ft_groups: dict[tuple[str, str], list[ReleaseGroupBreakdown]] = defaultdict(list)
+    for (artist, folder_type, release_group), pressings in sorted(rg_groups.items()):
+        rgb = ReleaseGroupBreakdown(
+            release_group=release_group,
+            track_count=sum(p.track_count for p in pressings),
+            disc_count=sum(p.disc_count for p in pressings),
+            total_size_bytes=sum(p.total_size_bytes for p in pressings),
+            total_duration_seconds=sum(p.total_duration_seconds for p in pressings),
+            pressings=pressings,
+        )
+        ft_groups[(artist, folder_type)].append(rgb)
+
+    # Group folder types by artist
+    artist_groups: dict[str, list[FolderTypeBreakdown]] = defaultdict(list)
+    for (artist, folder_type), release_groups in sorted(ft_groups.items()):
+        ftb = FolderTypeBreakdown(
+            folder_type=folder_type,
+            track_count=sum(rg.track_count for rg in release_groups),
+            disc_count=sum(rg.disc_count for rg in release_groups),
+            total_size_bytes=sum(rg.total_size_bytes for rg in release_groups),
+            total_duration_seconds=sum(rg.total_duration_seconds for rg in release_groups),
+            release_groups=release_groups,
+        )
+        artist_groups[artist].append(ftb)
+
+    # Build final artist list, sorted by track count descending
+    result: list[ArtistBreakdown] = []
+    for artist in sorted(artist_groups.keys()):
+        fts = artist_groups[artist]
         result.append(
-            ReleaseTypeBreakdown(
-                release_type=r["release_type"] or "Unknown",
-                track_count=track_count,
-                album_count=album_count,
-                total_size_bytes=r["total_size"] or 0,
-                total_duration_seconds=total_duration,
-                avg_album_duration_seconds=avg_album_dur,
-                avg_track_duration_seconds=avg_track_dur,
+            ArtistBreakdown(
+                artist=artist,
+                track_count=sum(ft.track_count for ft in fts),
+                disc_count=sum(ft.disc_count for ft in fts),
+                total_size_bytes=sum(ft.total_size_bytes for ft in fts),
+                total_duration_seconds=sum(ft.total_duration_seconds for ft in fts),
+                folder_types=fts,
             )
         )
+
+    result.sort(key=lambda a: a.track_count, reverse=True)
     return result
 
 
@@ -176,11 +252,11 @@ def _query_distribution(conn: sqlite3.Connection) -> DistributionSummary:
 def full_data(conn: sqlite3.Connection) -> OverviewFullData:
     """Return the complete dataset for ``report overview``."""
     totals = _query_totals(conn)
-    by_type = _query_by_release_type(conn)
+    by_artist = _query_hierarchy(conn)
     distribution = _query_distribution(conn)
     return OverviewFullData(
         totals=totals,
-        by_release_type=by_type,
+        by_artist=by_artist,
         distribution=distribution,
     )
 
