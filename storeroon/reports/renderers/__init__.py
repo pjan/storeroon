@@ -1,6 +1,11 @@
 """
 storeroon.reports.renderers — output rendering layer.
 
-Each renderer accepts a ReportData instance and produces output in a
-specific format. Renderers know nothing about the database.
+Renderers accept ReportData instances and produce output. Renderers know
+nothing about the database.
+
+Modules:
+    terminal — Rich terminal output (interactive use)
+    json_renderer — JSON file output (stable filenames, envelope metadata)
+    html_sections — Section builders for HTML rendering (used by the server)
 """

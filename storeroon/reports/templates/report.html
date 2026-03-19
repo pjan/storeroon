@@ -197,6 +197,14 @@ tbody tr:hover { background: var(--bg-alt); }
 </style>
 </head>
 <body>
+{% if nav_links %}
+<nav style="margin-bottom: 1.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border); font-size: 0.85rem;">
+  <a href="/" style="color: var(--accent); text-decoration: none; font-weight: 600;">Dashboard</a>
+  {% for link in nav_links %}
+   &middot; {% if link.active %}<strong>{{ link.title }}</strong>{% else %}<a href="/report/{{ link.name }}" style="color: var(--accent); text-decoration: none;">{{ link.title }}</a>{% endif %}
+  {% endfor %}
+</nav>
+{% endif %}
 <h1>{{ title }}</h1>
 <div class="meta">
   <span>Generated: {{ generated_at }}</span>

@@ -1,22 +1,17 @@
 """
-storeroon.reports.renderers.html_renderer — HTML output for Sprint 2 reports.
+storeroon.reports.renderers.html_sections — HTML section builders.
 
-Produces a single self-contained HTML file per report subcommand using Jinja2
-templates. No external dependencies — inline <style> block only, no JavaScript.
-CSS uses @media (prefers-color-scheme: dark) for passive dark mode.
-
-Each ``write_*`` function accepts a ``Path`` (output directory), a timestamp
-string (for filename generation), and the corresponding report data model.
-It returns a list of paths that were written.
+Pure functions that transform report *FullData models into the intermediate
+dict structure expected by the Jinja2 ``report.html`` template.  These
+functions have no I/O side-effects and know nothing about the filesystem or
+HTTP layer — they are shared by both the static HTML renderer and the
+``storeroon serve`` web server.
 """
 
 from __future__ import annotations
 
-from importlib import resources
-from pathlib import Path
+from collections.abc import Callable
 from typing import Any
-
-from jinja2 import Template
 
 from storeroon.reports.models import (
     AlbumConsistencyFullData,
@@ -40,48 +35,34 @@ from storeroon.reports.utils import (
     fmt_duration_short,
     fmt_pct,
     fmt_size_gb,
-    now_filename_stamp,
-    now_iso,
     safe_pct,
 )
 
 # ---------------------------------------------------------------------------
-# Template loading
+# Report title registry
 # ---------------------------------------------------------------------------
 
-_TEMPLATE: Template | None = None
-
-
-def _get_template() -> Template:
-    """Load and cache the Jinja2 HTML template from the package resources."""
-    global _TEMPLATE
-    if _TEMPLATE is None:
-        ref = resources.files("storeroon.reports.templates").joinpath("report.html")
-        html = ref.read_text(encoding="utf-8")
-        _TEMPLATE = Template(html)
-    return _TEMPLATE
-
+REPORT_TITLES: dict[str, str] = {
+    "overview": "Collection Overview",
+    "technical": "Audio Technical Quality",
+    "tags": "Tag Coverage & Key Inventory",
+    "tag_formats": "Tag Format Quality",
+    "album_consistency": "Intra-Album Consistency",
+    "ids": "External ID Coverage & Integrity",
+    "duplicates": "Duplicates",
+    "issues": "Scan Issues",
+    "artists": "Artist Name Consistency",
+    "genres": "Genre Analysis",
+    "lyrics": "Lyrics Coverage",
+    "replaygain": "ReplayGain Coverage",
+}
 
 # ---------------------------------------------------------------------------
-# Data-structure helpers for the template
+# Low-level template data-structure helpers
 # ---------------------------------------------------------------------------
-# The template expects a list of ``sections``, each with optional:
-#   - heading (str)
-#   - note (str | None)
-#   - summary_cards (list[dict] | None)
-#   - tables (list[dict] | None)
-#   - text_blocks (list[dict] | None)
-#
-# Each table dict has:
-#   - title (str | None)
-#   - headers: list[{label, align?}]
-#   - rows: list[list[{value, cls?, bar_pct?, bar_cls?}]]
-#   - footer (str | None)
-#   - empty_message (str | None)
 
 
 def _hdr(label: str, align: str | None = None) -> dict[str, Any]:
-    """Build a header cell dict."""
     d: dict[str, Any] = {"label": label}
     if align:
         d["align"] = align
@@ -94,7 +75,6 @@ def _cell(
     bar_pct: float | None = None,
     bar_cls: str | None = None,
 ) -> dict[str, Any]:
-    """Build a table cell dict."""
     d: dict[str, Any] = {"value": str(value) if value is not None else ""}
     if cls:
         d["cls"] = cls
@@ -106,12 +86,10 @@ def _cell(
 
 
 def _card(value: str, label: str) -> dict[str, str]:
-    """Build a summary card dict."""
     return {"value": value, "label": label}
 
 
 def _text(content: str, cls: str | None = None) -> dict[str, Any]:
-    """Build a text block dict."""
     d: dict[str, Any] = {"content": content}
     if cls:
         d["cls"] = cls
@@ -156,7 +134,6 @@ def _bucket_table(
     buckets: list[BucketCount],
     bar_color: str | None = None,
 ) -> dict[str, Any]:
-    """Build a table dict from a list of BucketCount instances with bar charts."""
     max_pct = max((b.percentage for b in buckets), default=1.0)
     rows: list[list[dict[str, Any]]] = []
     for b in buckets:
@@ -179,49 +156,12 @@ def _bucket_table(
     )
 
 
-# ---------------------------------------------------------------------------
-# File writing helper
-# ---------------------------------------------------------------------------
-
-
-def _write_html(
-    output_dir: Path,
-    report_name: str,
-    timestamp: str,
-    title: str,
-    sections: list[dict[str, Any]],
-    filters: str | None = None,
-) -> Path:
-    """Render and write a single self-contained HTML file. Returns the path."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{report_name}_{timestamp}.html"
-    filepath = output_dir / filename
-
-    template = _get_template()
-    html = template.render(
-        title=title,
-        generated_at=now_iso(),
-        filters=filters or "",
-        sections=sections,
-    )
-    filepath.write_text(html, encoding="utf-8")
-    return filepath
-
-
 # =========================================================================
 # Report 1 — Collection overview
 # =========================================================================
 
 
-def write_overview(
-    output_dir: Path,
-    data: OverviewFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the collection overview report."""
-    ts = timestamp or now_filename_stamp()
+def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     t = data.totals
@@ -289,11 +229,7 @@ def write_overview(
         )
     )
 
-    return [
-        _write_html(
-            output_dir, "report_overview", ts, "Collection Overview", sections, filters
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -301,15 +237,7 @@ def write_overview(
 # =========================================================================
 
 
-def write_technical(
-    output_dir: Path,
-    data: TechnicalFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the technical quality report."""
-    ts = timestamp or now_filename_stamp()
+def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -342,7 +270,6 @@ def write_technical(
         dist_tables.append(_bucket_table(label, buckets))
     sections.append(_section("Distributions", tables=dist_tables))
 
-    # Outliers
     if data.duration_outliers:
         outlier_rows: list[list[dict[str, Any]]] = []
         for o in data.duration_outliers:
@@ -379,7 +306,6 @@ def write_technical(
             )
         )
 
-    # Vendors
     if data.vendors:
         vendor_rows: list[list[dict[str, Any]]] = []
         for v in data.vendors:
@@ -405,7 +331,6 @@ def write_technical(
             )
         )
 
-    # Missing MD5
     if data.missing_md5_albums:
         md5_rows: list[list[dict[str, Any]]] = []
         for a in data.missing_md5_albums:
@@ -437,16 +362,7 @@ def write_technical(
             )
         )
 
-    return [
-        _write_html(
-            output_dir,
-            "report_technical",
-            ts,
-            "Audio Technical Quality",
-            sections,
-            filters,
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -454,15 +370,7 @@ def write_technical(
 # =========================================================================
 
 
-def write_tag_coverage(
-    output_dir: Path,
-    data: TagCoverageFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the tag coverage report."""
-    ts = timestamp or now_filename_stamp()
+def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -515,7 +423,6 @@ def write_tag_coverage(
             )
         )
 
-    # Aliases
     if data.alias_usage:
         alias_rows: list[list[dict[str, Any]]] = []
         for row in data.alias_usage:
@@ -546,7 +453,6 @@ def write_tag_coverage(
             )
         )
 
-    # Full inventory
     inv_rows: list[list[dict[str, Any]]] = []
     for row in data.full_inventory:
         inv_rows.append(
@@ -575,11 +481,10 @@ def write_tag_coverage(
         )
     )
 
-    # Unknown keys
     if data.unknown_keys:
         unk_rows: list[list[dict[str, Any]]] = []
         for row in data.unknown_keys:
-            note = " ⚠ <0.1%" if row.coverage_pct < 0.1 else ""
+            note = " \u26a0 <0.1%" if row.coverage_pct < 0.1 else ""
             unk_rows.append(
                 [
                     _cell(row.tag_key_upper, cls="mono severity-error"),
@@ -589,7 +494,7 @@ def write_tag_coverage(
             )
         sections.append(
             _section(
-                f"Section C: Unknown Keys ({len(data.unknown_keys)} — stripping candidates)",
+                f"Section C: Unknown Keys ({len(data.unknown_keys)} \u2014 stripping candidates)",
                 note="Review these keys and add to [tags.strip] in your config to remove them in Phase 4.",
                 tables=[
                     _table(
@@ -605,16 +510,7 @@ def write_tag_coverage(
             )
         )
 
-    return [
-        _write_html(
-            output_dir,
-            "report_tags",
-            ts,
-            "Tag Coverage & Key Inventory",
-            sections,
-            filters,
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -622,15 +518,7 @@ def write_tag_coverage(
 # =========================================================================
 
 
-def write_tag_formats(
-    output_dir: Path,
-    data: TagFormatsFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the tag format quality report."""
-    ts = timestamp or now_filename_stamp()
+def build_tag_formats_sections(data: TagFormatsFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -680,7 +568,6 @@ def write_tag_formats(
             )
         )
 
-        # Extra distributions (e.g. date precision)
         for extra_name, extra_rows in sec.extra.items():
             if extra_rows:
                 ext_rows: list[list[dict[str, Any]]] = []
@@ -700,7 +587,6 @@ def write_tag_formats(
                     )
                 )
 
-        # Invalid values
         if sec.invalid_values:
             iv_rows: list[list[dict[str, Any]]] = []
             for iv in sec.invalid_values:
@@ -724,16 +610,7 @@ def write_tag_formats(
 
         sections.append(_section(f"Field: {sec.field_name}", tables=tables))
 
-    return [
-        _write_html(
-            output_dir,
-            "report_tag_formats",
-            ts,
-            "Tag Format Quality",
-            sections,
-            filters,
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -741,15 +618,9 @@ def write_tag_formats(
 # =========================================================================
 
 
-def write_album_consistency(
-    output_dir: Path,
+def build_album_consistency_sections(
     data: AlbumConsistencyFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the album consistency report."""
-    ts = timestamp or now_filename_stamp()
+) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -766,7 +637,6 @@ def write_album_consistency(
         )
     )
 
-    # Field consistency violations
     if data.field_violations:
         fv_rows: list[list[dict[str, Any]]] = []
         for v in data.field_violations:
@@ -775,7 +645,7 @@ def write_album_consistency(
                 for val in v.distinct_values[:5]
             )
             if len(v.distinct_values) > 5:
-                vals_display += f" … +{len(v.distinct_values) - 5} more"
+                vals_display += f" \u2026 +{len(v.distinct_values) - 5} more"
             fv_rows.append(
                 [
                     _cell(v.album_dir, cls="path"),
@@ -805,7 +675,6 @@ def write_album_consistency(
             )
         )
 
-    # Track numbering violations
     if data.numbering_violations:
         nv_rows: list[list[dict[str, Any]]] = []
         for v in data.numbering_violations:
@@ -833,7 +702,6 @@ def write_album_consistency(
             )
         )
 
-    # Summary by violation type
     if data.summary_by_type:
         sv_rows: list[list[dict[str, Any]]] = []
         for s in data.summary_by_type:
@@ -864,16 +732,7 @@ def write_album_consistency(
             )
         )
 
-    return [
-        _write_html(
-            output_dir,
-            "report_album_consistency",
-            ts,
-            "Intra-Album Consistency",
-            sections,
-            filters,
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -881,15 +740,7 @@ def write_album_consistency(
 # =========================================================================
 
 
-def write_ids(
-    output_dir: Path,
-    data: IdsFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the external IDs report."""
-    ts = timestamp or now_filename_stamp()
+def build_ids_sections(data: IdsFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -900,7 +751,6 @@ def write_ids(
     )
 
     for id_section in [data.musicbrainz, data.discogs]:
-        # Coverage table
         cov_rows: list[list[dict[str, Any]]] = []
         for row in id_section.coverage:
             mal_cls = "severity-error" if row.malformed_count > 0 else ""
@@ -931,7 +781,6 @@ def write_ids(
             )
         ]
 
-        # Partial albums
         if id_section.partial_albums:
             pa_rows: list[list[dict[str, Any]]] = []
             for pa in id_section.partial_albums:
@@ -956,7 +805,6 @@ def write_ids(
                 )
             )
 
-        # Duplicate IDs
         if id_section.duplicate_ids:
             dup_rows: list[list[dict[str, Any]]] = []
             for d in id_section.duplicate_ids:
@@ -964,7 +812,7 @@ def write_ids(
                 same_cls = "severity-error" if d.same_directory else "severity-warning"
                 paths_str = "<br>".join(d.file_paths[:10])
                 if len(d.file_paths) > 10:
-                    paths_str += f"<br>… +{len(d.file_paths) - 10} more"
+                    paths_str += f"<br>\u2026 +{len(d.file_paths) - 10} more"
                 dup_rows.append(
                     [
                         _cell(d.id_value, cls="mono"),
@@ -1004,16 +852,7 @@ def write_ids(
             )
         )
 
-    return [
-        _write_html(
-            output_dir,
-            "report_ids",
-            ts,
-            "External ID Coverage & Integrity",
-            sections,
-            filters,
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -1021,15 +860,7 @@ def write_ids(
 # =========================================================================
 
 
-def write_duplicates(
-    output_dir: Path,
-    data: DuplicatesFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the duplicates report."""
-    ts = timestamp or now_filename_stamp()
+def build_duplicates_sections(data: DuplicatesFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -1043,23 +874,22 @@ def write_duplicates(
         )
     )
 
-    # Exact duplicates
     if data.exact:
         exact_rows: list[list[dict[str, Any]]] = []
         for g in data.exact:
             paths_str = "<br>".join(g.paths[:10])
             if len(g.paths) > 10:
-                paths_str += f"<br>… +{len(g.paths) - 10} more"
+                paths_str += f"<br>\u2026 +{len(g.paths) - 10} more"
             exact_rows.append(
                 [
-                    _cell(g.checksum[:20] + "…", cls="mono"),
+                    _cell(g.checksum[:20] + "\u2026", cls="mono"),
                     _cell(g.copy_count, cls="num"),
                     _cell(paths_str, cls="path"),
                 ]
             )
         sections.append(
             _section(
-                f"Exact Duplicates (SHA-256) — {len(data.exact)} group(s)",
+                f"Exact Duplicates (SHA-256) \u2014 {len(data.exact)} group(s)",
                 tables=[
                     _table(
                         None,
@@ -1077,7 +907,6 @@ def write_duplicates(
             )
         )
 
-    # MBID duplicates
     if data.mbid:
         mbid_rows: list[list[dict[str, Any]]] = []
         for g in data.mbid:
@@ -1087,10 +916,10 @@ def write_duplicates(
                 f"{f.path} [{f.album} / {f.date}]" for f in g.files[:10]
             )
             if len(g.files) > 10:
-                file_details += f"<br>… +{len(g.files) - 10} more"
+                file_details += f"<br>\u2026 +{len(g.files) - 10} more"
             mbid_rows.append(
                 [
-                    _cell(g.mbid[:20] + "…", cls="mono"),
+                    _cell(g.mbid[:20] + "\u2026", cls="mono"),
                     _cell(g.file_count, cls="num"),
                     _cell(same_text, cls=same_cls),
                     _cell(file_details, cls="path"),
@@ -1098,7 +927,7 @@ def write_duplicates(
             )
         sections.append(
             _section(
-                f"Same Recording Duplicates (MUSICBRAINZ_TRACKID) — {len(data.mbid)} group(s)",
+                f"Same Recording Duplicates (MUSICBRAINZ_TRACKID) \u2014 {len(data.mbid)} group(s)",
                 tables=[
                     _table(
                         None,
@@ -1114,13 +943,12 @@ def write_duplicates(
             )
         )
 
-    # Probable duplicates
     if data.probable:
         prob_rows: list[list[dict[str, Any]]] = []
         for g in data.probable:
             paths_str = "<br>".join(g.paths[:5])
             if len(g.paths) > 5:
-                paths_str += f"<br>… +{len(g.paths) - 5} more"
+                paths_str += f"<br>\u2026 +{len(g.paths) - 5} more"
             prob_rows.append(
                 [
                     _cell(g.albumartist),
@@ -1133,7 +961,7 @@ def write_duplicates(
             )
         sections.append(
             _section(
-                f"Probable Duplicates (by position) — {len(data.probable)} group(s)",
+                f"Probable Duplicates (by position) \u2014 {len(data.probable)} group(s)",
                 tables=[
                     _table(
                         None,
@@ -1151,11 +979,7 @@ def write_duplicates(
             )
         )
 
-    return [
-        _write_html(
-            output_dir, "report_duplicates", ts, "Duplicates", sections, filters
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -1163,15 +987,7 @@ def write_duplicates(
 # =========================================================================
 
 
-def write_issues(
-    output_dir: Path,
-    data: IssuesFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the scan issues report."""
-    ts = timestamp or now_filename_stamp()
+def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -1188,13 +1004,8 @@ def write_issues(
                 text_blocks=[_text("No open scan issues.", cls="dim")],
             )
         )
-        return [
-            _write_html(
-                output_dir, "report_issues", ts, "Scan Issues", sections, filters
-            )
-        ]
+        return sections
 
-    # Pivot table
     if data.pivot:
         piv_rows: list[list[dict[str, Any]]] = []
         for row in data.pivot:
@@ -1219,7 +1030,6 @@ def write_issues(
             )
         )
 
-    # By album (top 50)
     if data.by_album:
         album_rows: list[list[dict[str, Any]]] = []
         for row in data.by_album[:50]:
@@ -1246,7 +1056,6 @@ def write_issues(
             )
         )
 
-    # By artist (top 20)
     if data.by_artist:
         art_rows: list[list[dict[str, Any]]] = []
         for row in data.by_artist[:20]:
@@ -1273,7 +1082,6 @@ def write_issues(
             )
         )
 
-    # Per-issue-type drill-down
     for issue_type, detail_rows in sorted(data.by_type.items()):
         dt_rows: list[list[dict[str, Any]]] = []
         for dr in detail_rows:
@@ -1298,9 +1106,7 @@ def write_issues(
             )
         )
 
-    return [
-        _write_html(output_dir, "report_issues", ts, "Scan Issues", sections, filters)
-    ]
+    return sections
 
 
 # =========================================================================
@@ -1308,15 +1114,7 @@ def write_issues(
 # =========================================================================
 
 
-def write_artists(
-    output_dir: Path,
-    data: ArtistsFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the artist consistency report."""
-    ts = timestamp or now_filename_stamp()
+def build_artists_sections(data: ArtistsFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -1340,7 +1138,6 @@ def write_artists(
         )
     )
 
-    # ALBUMARTIST values (top 100)
     if data.albumartist_values:
         aa_rows: list[list[dict[str, Any]]] = []
         for v in data.albumartist_values[:100]:
@@ -1368,14 +1165,13 @@ def write_artists(
             )
         )
 
-    # Case variants
     if data.albumartist_case_variants:
         cv_text: list[dict[str, Any]] = []
         for g in data.albumartist_case_variants:
             variants_str = ", ".join(f'"{v}"' for v in g.variants)
             cv_text.append(
                 _text(
-                    f'<span class="severity-error">●</span> {variants_str} '
+                    f'<span class="severity-error">\u25cf</span> {variants_str} '
                     f"(total: {fmt_count(g.total_track_count)} tracks)"
                 )
             )
@@ -1386,7 +1182,6 @@ def write_artists(
             )
         )
 
-    # Fuzzy pairs
     if data.albumartist_fuzzy_pairs:
         fp_rows: list[list[dict[str, Any]]] = []
         for p in data.albumartist_fuzzy_pairs:
@@ -1418,7 +1213,6 @@ def write_artists(
             )
         )
 
-    # ARTIST values (top 100)
     if data.artist_values:
         a_rows: list[list[dict[str, Any]]] = []
         for v in data.artist_values[:100]:
@@ -1446,21 +1240,20 @@ def write_artists(
             )
         )
 
-    # ARTIST case variants
     if data.artist_case_variants:
         acv_text: list[dict[str, Any]] = []
         for g in data.artist_case_variants[:50]:
             variants_str = ", ".join(f'"{v}"' for v in g.variants)
             acv_text.append(
                 _text(
-                    f'<span class="severity-error">●</span> {variants_str} '
+                    f'<span class="severity-error">\u25cf</span> {variants_str} '
                     f"(total: {fmt_count(g.total_track_count)} tracks)"
                 )
             )
         if len(data.artist_case_variants) > 50:
             acv_text.append(
                 _text(
-                    f"… and {len(data.artist_case_variants) - 50} more groups.",
+                    f"\u2026 and {len(data.artist_case_variants) - 50} more groups.",
                     cls="dim",
                 )
             )
@@ -1471,7 +1264,6 @@ def write_artists(
             )
         )
 
-    # ARTIST fuzzy pairs
     if data.artist_fuzzy_pairs:
         afp_rows: list[list[dict[str, Any]]] = []
         for p in data.artist_fuzzy_pairs:
@@ -1503,16 +1295,7 @@ def write_artists(
             )
         )
 
-    return [
-        _write_html(
-            output_dir,
-            "report_artists",
-            ts,
-            "Artist Name Consistency",
-            sections,
-            filters,
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -1520,15 +1303,7 @@ def write_artists(
 # =========================================================================
 
 
-def write_genres(
-    output_dir: Path,
-    data: GenresFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the genre analysis report."""
-    ts = timestamp or now_filename_stamp()
+def build_genres_sections(data: GenresFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -1546,7 +1321,6 @@ def write_genres(
         )
     )
 
-    # Genre values (all of them in HTML — it's scrollable)
     if data.genre_values:
         max_count = data.genre_values[0].file_count if data.genre_values else 1
         gv_rows: list[list[dict[str, Any]]] = []
@@ -1580,7 +1354,6 @@ def write_genres(
             )
         )
 
-    # Fuzzy pairs
     if data.fuzzy_pairs:
         fp_rows: list[list[dict[str, Any]]] = []
         for p in data.fuzzy_pairs:
@@ -1612,7 +1385,6 @@ def write_genres(
             )
         )
 
-    # Missing genre by artist
     if data.no_genre_by_artist:
         mga_rows: list[list[dict[str, Any]]] = []
         for a in data.no_genre_by_artist:
@@ -1635,7 +1407,6 @@ def write_genres(
             )
         )
 
-    # Multi-genre combos
     if data.multi_genre_combos:
         mg_rows: list[list[dict[str, Any]]] = []
         for combo in data.multi_genre_combos:
@@ -1658,11 +1429,7 @@ def write_genres(
             )
         )
 
-    return [
-        _write_html(
-            output_dir, "report_genres", ts, "Genre Analysis", sections, filters
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -1670,15 +1437,7 @@ def write_genres(
 # =========================================================================
 
 
-def write_lyrics(
-    output_dir: Path,
-    data: LyricsFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the lyrics coverage report."""
-    ts = timestamp or now_filename_stamp()
+def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     o = data.overall
@@ -1699,7 +1458,6 @@ def write_lyrics(
         )
     )
 
-    # Overall coverage table
     ov_rows: list[list[dict[str, Any]]] = [
         [
             _cell("With lyrics"),
@@ -1752,7 +1510,6 @@ def write_lyrics(
         )
     )
 
-    # By artist
     if data.by_artist:
         ba_rows: list[list[dict[str, Any]]] = []
         for a in data.by_artist:
@@ -1788,7 +1545,6 @@ def write_lyrics(
             )
         )
 
-    # By album
     if data.by_album:
         alb_rows: list[list[dict[str, Any]]] = []
         for a in data.by_album:
@@ -1824,11 +1580,7 @@ def write_lyrics(
             )
         )
 
-    return [
-        _write_html(
-            output_dir, "report_lyrics", ts, "Lyrics Coverage", sections, filters
-        )
-    ]
+    return sections
 
 
 # =========================================================================
@@ -1836,15 +1588,7 @@ def write_lyrics(
 # =========================================================================
 
 
-def write_replaygain(
-    output_dir: Path,
-    data: ReplayGainFullData,
-    timestamp: str | None = None,
-    *,
-    filters: str | None = None,
-) -> list[Path]:
-    """Write HTML file for the ReplayGain coverage report."""
-    ts = timestamp or now_filename_stamp()
+def build_replaygain_sections(data: ReplayGainFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
@@ -1858,7 +1602,6 @@ def write_replaygain(
         )
     )
 
-    # Coverage table
     if data.coverage:
         cov_rows: list[list[dict[str, Any]]] = []
         for row in data.coverage:
@@ -1895,7 +1638,6 @@ def write_replaygain(
             )
         )
 
-    # Partial albums
     if data.partial_albums:
         pa_rows: list[list[dict[str, Any]]] = []
         for pa in data.partial_albums:
@@ -1910,7 +1652,7 @@ def write_replaygain(
         sections.append(
             _section(
                 f"Partially-Tagged Albums ({len(data.partial_albums)})",
-                note="Partial album ReplayGain is worse than none — it produces inconsistent playback volume.",
+                note="Partial album ReplayGain is worse than none \u2014 it produces inconsistent playback volume.",
                 tables=[
                     _table(
                         None,
@@ -1926,7 +1668,6 @@ def write_replaygain(
             )
         )
 
-    # Track gain distribution
     if data.gain_distribution:
         sections.append(
             _section(
@@ -1935,7 +1676,6 @@ def write_replaygain(
             )
         )
 
-    # Outliers
     if data.outliers:
         out_rows: list[list[dict[str, Any]]] = []
         for o in data.outliers:
@@ -1949,7 +1689,7 @@ def write_replaygain(
             )
         sections.append(
             _section(
-                f"Gain Outliers (outside [-20, +10] dB) — {len(data.outliers)} found",
+                f"Gain Outliers (outside [-20, +10] dB) \u2014 {len(data.outliers)} found",
                 tables=[
                     _table(
                         None,
@@ -1972,13 +1712,24 @@ def write_replaygain(
             )
         )
 
-    return [
-        _write_html(
-            output_dir,
-            "report_replaygain",
-            ts,
-            "ReplayGain Coverage",
-            sections,
-            filters,
-        )
-    ]
+    return sections
+
+
+# ---------------------------------------------------------------------------
+# Section builder registry
+# ---------------------------------------------------------------------------
+
+SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
+    "overview": build_overview_sections,
+    "technical": build_technical_sections,
+    "tags": build_tag_coverage_sections,
+    "tag_formats": build_tag_formats_sections,
+    "album_consistency": build_album_consistency_sections,
+    "ids": build_ids_sections,
+    "duplicates": build_duplicates_sections,
+    "issues": build_issues_sections,
+    "artists": build_artists_sections,
+    "genres": build_genres_sections,
+    "lyrics": build_lyrics_sections,
+    "replaygain": build_replaygain_sections,
+}

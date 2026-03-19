@@ -1,5 +1,5 @@
 """
-storeroon.reports.utils — shared helpers for Sprint 2 reports.
+storeroon.reports.utils — shared helpers for reports.
 
 Provides number/percentage/duration formatting, bar chart rendering for
 terminal output, severity colour mapping for Rich, and common query helpers.
@@ -9,6 +9,46 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+
+# ---------------------------------------------------------------------------
+# Report name registry
+# ---------------------------------------------------------------------------
+
+REPORT_NAMES: tuple[str, ...] = (
+    "overview",
+    "technical",
+    "tags",
+    "tag_formats",
+    "album_consistency",
+    "ids",
+    "duplicates",
+    "issues",
+    "artists",
+    "genres",
+    "lyrics",
+    "replaygain",
+)
+
+
+# ---------------------------------------------------------------------------
+# Filter string builder (shared by CLI and server)
+# ---------------------------------------------------------------------------
+
+
+def build_filter_string(
+    artist: str | None = None,
+    album: str | None = None,
+    min_severity: str | None = None,
+) -> str | None:
+    """Build a human-readable filter description for report output."""
+    parts: list[str] = []
+    if artist:
+        parts.append(f"artist={artist!r}")
+    if album:
+        parts.append(f"album={album!r}")
+    if min_severity and min_severity != "info":
+        parts.append(f"min_severity={min_severity}")
+    return ", ".join(parts) if parts else None
 
 # ---------------------------------------------------------------------------
 # Number formatting

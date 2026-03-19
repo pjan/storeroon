@@ -1,5 +1,5 @@
 """
-storeroon.reports — analysis and reporting layer (Sprint 2).
+storeroon.reports — analysis and reporting layer.
 
 This package provides read-only analysis of the collection database,
 producing reports across 13 areas: overview, technical quality, tag
@@ -10,7 +10,8 @@ Architecture:
     Layer 1 — Query layer (``reports.queries.*``):
         Pure query functions returning typed dataclasses.
     Layer 2 — Renderer layer (``reports.renderers.*``):
-        Terminal (Rich), CSV, JSON, and HTML output.
+        Terminal (Rich) for live output, JSON for file export.
+        HTML section builders for the ``storeroon serve`` web server.
     Layer 3 — CLI layer (``reports.cli``):
         Wires queries and renderers together with CLI flags.
 """

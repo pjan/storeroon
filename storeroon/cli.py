@@ -5,8 +5,9 @@ Entry points:
     python -m storeroon scan --root /path/to/collection [--dry-run]
     python -m storeroon scan --config storeroon.toml [--dry-run]
     python -m storeroon report summary
-    python -m storeroon report overview [--output terminal|csv|json|html]
-    python -m storeroon report technical [--output ...]
+    python -m storeroon report overview [--output terminal|json]
+    python -m storeroon report all [--output-dir PATH]
+    python -m storeroon serve [--port 8080] [--json-dir PATH]
     ... (see ``storeroon report --help`` for all subcommands)
 """
 
@@ -267,6 +268,39 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Serve command
+# ---------------------------------------------------------------------------
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    """Start the local web server for browsing HTML reports."""
+    from storeroon import config as cfg
+    from storeroon.server import run_server
+
+    json_dir: Path | None = None
+
+    if args.json_dir:
+        json_dir = Path(args.json_dir).expanduser().resolve()
+    else:
+        try:
+            conf = cfg.load(getattr(args, "config", None))
+            json_dir = conf.reports.output_dir.expanduser().resolve()
+        except cfg.ConfigError as exc:
+            console.print(f"[bold red]Configuration error:[/bold red] {exc}")
+            return 1
+
+    if not json_dir.is_dir():
+        console.print(
+            f"[yellow]JSON directory does not exist: {json_dir}\n"
+            f"Run [bold]storeroon report all[/bold] first to generate reports.[/yellow]"
+        )
+        return 1
+
+    run_server(json_dir, port=args.port)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
 
@@ -305,6 +339,30 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- report -----------------------------------------------------------
     build_report_parser(subparsers)
 
+    # --- serve ------------------------------------------------------------
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Start a local web server to browse HTML reports",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)",
+    )
+    serve_parser.add_argument(
+        "--json-dir",
+        type=str,
+        default=None,
+        help="Directory containing JSON report files (default: from config)",
+    )
+    serve_parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to the TOML configuration file",
+    )
+
     return parser
 
 
@@ -326,6 +384,8 @@ def cli() -> None:
         sys.exit(_cmd_scan(args))
     elif args.command == "report":
         sys.exit(dispatch_report(args))
+    elif args.command == "serve":
+        sys.exit(_cmd_serve(args))
     else:
         parser.print_help()
         sys.exit(1)

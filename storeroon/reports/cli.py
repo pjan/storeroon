@@ -1,5 +1,5 @@
 """
-storeroon.reports.cli — CLI layer for Sprint 2 reports.
+storeroon.reports.cli — CLI layer for reports.
 
 Wires the query and renderer layers together. Handles ``--output``,
 ``--output-dir``, ``--artist``, ``--album``, ``--min-severity`` flags.
@@ -9,7 +9,7 @@ Handles ``--artist`` / ``--album`` filter producing no results gracefully.
 CLI structure::
 
     python -m storeroon report summary
-    python -m storeroon report overview      [--output terminal|csv|json|html] [--output-dir PATH]
+    python -m storeroon report overview      [--output terminal|json] [--output-dir PATH]
     python -m storeroon report technical     [--output ...] [--output-dir PATH]
     python -m storeroon report tags          [--output ...] [--output-dir PATH]
     python -m storeroon report tag-formats   [--output ...] [--output-dir PATH] [--artist ARTIST]
@@ -21,6 +21,7 @@ CLI structure::
     python -m storeroon report genres        [--output ...] [--output-dir PATH]
     python -m storeroon report lyrics        [--output ...] [--output-dir PATH] [--artist ARTIST]
     python -m storeroon report replaygain    [--output ...] [--output-dir PATH] [--artist ARTIST]
+    python -m storeroon report all           [--output-dir PATH]
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ from rich.console import Console
 from storeroon import config as cfg
 from storeroon.db import connect
 from storeroon.reports.models import MasterSummary
-from storeroon.reports.utils import now_filename_stamp
+from storeroon.reports.utils import build_filter_string
 
 log = logging.getLogger("storeroon.reports")
 
@@ -108,22 +109,6 @@ def _get_min_severity(args: argparse.Namespace) -> str:
     return getattr(args, "min_severity", "info") or "info"
 
 
-def _build_filter_string(
-    artist: str | None = None,
-    album: str | None = None,
-    min_severity: str | None = None,
-) -> str | None:
-    """Build a human-readable filter description for HTML reports."""
-    parts: list[str] = []
-    if artist:
-        parts.append(f"artist={artist!r}")
-    if album:
-        parts.append(f"album={album!r}")
-    if min_severity and min_severity != "info":
-        parts.append(f"min_severity={min_severity}")
-    return ", ".join(parts) if parts else None
-
-
 def _print_written_files(written: list[Path]) -> None:
     """Print a summary of files that were written."""
     if written:
@@ -149,6 +134,21 @@ def _check_artist_has_results(
         (artist_filter,),
     ).fetchone()
     return row is not None and row[0] > 0
+
+
+def _write_json(
+    args: argparse.Namespace,
+    conf: cfg.Config,
+    report_name: str,
+    data: object,
+    filters: dict[str, str | None] | None = None,
+) -> None:
+    """Write a JSON report file and print the result."""
+    from storeroon.reports.renderers.json_renderer import write_report
+
+    output_dir = _resolve_output_dir(args, conf)
+    written = write_report(output_dir, report_name, data, filters=filters)
+    _print_written_files([written])
 
 
 # ---------------------------------------------------------------------------
@@ -282,29 +282,15 @@ def _cmd_overview(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import overview
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_overview
 
     data = overview.full_data(conn)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        terminal.render_overview(output_console, data)
+        render_overview(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_overview(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_overview(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_overview(output_dir, data, ts)
-        _print_written_files(written)
+        _write_json(args, conf, "overview", data)
 
     conn.close()
     return 0
@@ -328,29 +314,15 @@ def _cmd_technical(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import technical
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_technical
 
     data = technical.full_data(conn)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        terminal.render_technical(output_console, data)
+        render_technical(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_technical(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_technical(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_technical(output_dir, data, ts)
-        _print_written_files(written)
+        _write_json(args, conf, "technical", data)
 
     conn.close()
     return 0
@@ -374,29 +346,15 @@ def _cmd_tags(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import tag_coverage
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_tag_coverage
 
     data = tag_coverage.full_data(conn, conf.tags)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        terminal.render_tag_coverage(output_console, data)
+        render_tag_coverage(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_tag_coverage(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_tag_coverage(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_tag_coverage(output_dir, data, ts)
-        _print_written_files(written)
+        _write_json(args, conf, "tags", data)
 
     conn.close()
     return 0
@@ -426,32 +384,16 @@ def _cmd_tag_formats(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import tag_formats
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_tag_formats
 
     data = tag_formats.full_data(conn, artist_filter=artist_filter)
     fmt = _get_output_format(args)
-    filters = _build_filter_string(artist=artist_filter)
 
     if fmt == "terminal":
-        terminal.render_tag_formats(output_console, data)
+        render_tag_formats(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_tag_formats(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_tag_formats(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_tag_formats(
-                output_dir, data, ts, filters=filters
-            )
-        _print_written_files(written)
+        filters = {"artist": artist_filter}
+        _write_json(args, conf, "tag_formats", data, filters=filters)
 
     conn.close()
     return 0
@@ -481,32 +423,16 @@ def _cmd_album_consistency(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import album_consistency
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_album_consistency
 
     data = album_consistency.full_data(conn, artist_filter=artist_filter)
     fmt = _get_output_format(args)
-    filters = _build_filter_string(artist=artist_filter)
 
     if fmt == "terminal":
-        terminal.render_album_consistency(output_console, data)
+        render_album_consistency(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_album_consistency(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_album_consistency(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_album_consistency(
-                output_dir, data, ts, filters=filters
-            )
-        _print_written_files(written)
+        filters = {"artist": artist_filter}
+        _write_json(args, conf, "album_consistency", data, filters=filters)
 
     conn.close()
     return 0
@@ -536,30 +462,16 @@ def _cmd_ids(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import ids
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_ids
 
     data = ids.full_data(conn, artist_filter=artist_filter)
     fmt = _get_output_format(args)
-    filters = _build_filter_string(artist=artist_filter)
 
     if fmt == "terminal":
-        terminal.render_ids(output_console, data)
+        render_ids(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_ids(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_ids(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_ids(output_dir, data, ts, filters=filters)
-        _print_written_files(written)
+        filters = {"artist": artist_filter}
+        _write_json(args, conf, "ids", data, filters=filters)
 
     conn.close()
     return 0
@@ -583,29 +495,15 @@ def _cmd_duplicates(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import duplicates
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_duplicates
 
     data = duplicates.full_data(conn)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        terminal.render_duplicates(output_console, data)
+        render_duplicates(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_duplicates(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_duplicates(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_duplicates(output_dir, data, ts)
-        _print_written_files(written)
+        _write_json(args, conf, "duplicates", data)
 
     conn.close()
     return 0
@@ -629,31 +527,17 @@ def _cmd_issues(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import issues
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_issues
 
     min_severity = _get_min_severity(args)
     data = issues.full_data(conn, min_severity=min_severity)
     fmt = _get_output_format(args)
-    filters = _build_filter_string(min_severity=min_severity)
 
     if fmt == "terminal":
-        terminal.render_issues(output_console, data)
+        render_issues(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_issues(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_issues(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_issues(output_dir, data, ts, filters=filters)
-        _print_written_files(written)
+        filters = {"min_severity": min_severity}
+        _write_json(args, conf, "issues", data, filters=filters)
 
     conn.close()
     return 0
@@ -677,30 +561,16 @@ def _cmd_artists(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import artists
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_artists
 
     threshold = conf.reports.fuzzy_threshold
     data = artists.full_data(conn, fuzzy_threshold=threshold)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        terminal.render_artists(output_console, data)
+        render_artists(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_artists(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_artists(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_artists(output_dir, data, ts)
-        _print_written_files(written)
+        _write_json(args, conf, "artists", data)
 
     conn.close()
     return 0
@@ -724,30 +594,16 @@ def _cmd_genres(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import genres
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_genres
 
     threshold = conf.reports.fuzzy_threshold
     data = genres.full_data(conn, fuzzy_threshold=threshold)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        terminal.render_genres(output_console, data)
+        render_genres(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_genres(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_genres(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_genres(output_dir, data, ts)
-        _print_written_files(written)
+        _write_json(args, conf, "genres", data)
 
     conn.close()
     return 0
@@ -777,30 +633,16 @@ def _cmd_lyrics(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import lyrics
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_lyrics
 
     data = lyrics.full_data(conn, artist_filter=artist_filter)
     fmt = _get_output_format(args)
-    filters = _build_filter_string(artist=artist_filter)
 
     if fmt == "terminal":
-        terminal.render_lyrics(output_console, data)
+        render_lyrics(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_lyrics(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_lyrics(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_lyrics(output_dir, data, ts, filters=filters)
-        _print_written_files(written)
+        filters = {"artist": artist_filter}
+        _write_json(args, conf, "lyrics", data, filters=filters)
 
     conn.close()
     return 0
@@ -830,44 +672,23 @@ def _cmd_replaygain(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import replaygain
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-        terminal,
-    )
+    from storeroon.reports.renderers.terminal import render_replaygain
 
     data = replaygain.full_data(conn, artist_filter=artist_filter)
     fmt = _get_output_format(args)
-    filters = _build_filter_string(artist=artist_filter)
 
     if fmt == "terminal":
-        terminal.render_replaygain(output_console, data)
+        render_replaygain(output_console, data)
     else:
-        output_dir = _resolve_output_dir(args, conf)
-        ts = now_filename_stamp()
-        written: list[Path] = []
-        if fmt == "csv":
-            written = csv_renderer.write_replaygain(output_dir, data, ts)
-        elif fmt == "json":
-            written = json_renderer.write_replaygain(output_dir, data, ts)
-        elif fmt == "html":
-            written = html_renderer.write_replaygain(
-                output_dir, data, ts, filters=filters
-            )
-        _print_written_files(written)
+        filters = {"artist": artist_filter}
+        _write_json(args, conf, "replaygain", data, filters=filters)
 
     conn.close()
     return 0
 
 
 def _cmd_all(args: argparse.Namespace) -> int:
-    """Execute ``report all`` — generate every report in a single run.
-
-    Loads config and opens the database once, then runs all 12 individual
-    reports sequentially with a shared timestamp. The ``summary`` report
-    is excluded (it is terminal-only and not a file-based report).
-    """
+    """Execute ``report all`` — generate all 12 reports as JSON."""
     conf = _load_config(args)
     if conf is None:
         return 1
@@ -883,19 +704,9 @@ def _cmd_all(args: argparse.Namespace) -> int:
         conn.close()
         return 0
 
-    fmt = _get_output_format(args)
-    if fmt == "terminal":
-        console.print(
-            "[yellow]The [bold]report all[/bold] command writes files — "
-            "please specify [bold]--output csv|json|html[/bold].[/yellow]"
-        )
-        conn.close()
-        return 1
-
     output_dir = _resolve_output_dir(args, conf)
-    ts = now_filename_stamp()
-    all_written: list[Path] = []
     threshold = conf.reports.fuzzy_threshold
+    all_written: list[Path] = []
 
     from storeroon.reports.queries import (
         album_consistency,
@@ -911,195 +722,32 @@ def _cmd_all(args: argparse.Namespace) -> int:
         tag_formats,
         technical,
     )
-    from storeroon.reports.renderers import (
-        csv_renderer,
-        html_renderer,
-        json_renderer,
-    )
+    from storeroon.reports.renderers.json_renderer import write_report
 
-    # Each entry: (label, query_fn, writer_map)
-    # writer_map is {format: callable(output_dir, data, ts, **kw) -> list[Path]}
-    reports: list[tuple[str, object, dict[str, object]]] = []
+    # (label, report_name, query_fn_call)
+    report_specs: list[tuple[str, str, Callable[[], object]]] = [
+        ("Overview", "overview", lambda: overview.full_data(conn)),
+        ("Technical", "technical", lambda: technical.full_data(conn)),
+        ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
+        ("Tag formats", "tag_formats", lambda: tag_formats.full_data(conn)),
+        ("Album consistency", "album_consistency", lambda: album_consistency.full_data(conn)),
+        ("External IDs", "ids", lambda: ids.full_data(conn)),
+        ("Duplicates", "duplicates", lambda: duplicates.full_data(conn)),
+        ("Scan issues", "issues", lambda: issues.full_data(conn)),
+        ("Artists", "artists", lambda: artists.full_data(conn, fuzzy_threshold=threshold)),
+        ("Genres", "genres", lambda: genres.full_data(conn, fuzzy_threshold=threshold)),
+        ("Lyrics", "lyrics", lambda: lyrics.full_data(conn)),
+        ("ReplayGain", "replaygain", lambda: replaygain.full_data(conn)),
+    ]
 
-    # --- 1. Overview ---
-    console.print("[dim]  1/12  Overview…[/dim]")
-    try:
-        data_overview = overview.full_data(conn)
-        w: list[Path] = []
-        if fmt == "csv":
-            w = csv_renderer.write_overview(output_dir, data_overview, ts)
-        elif fmt == "json":
-            w = json_renderer.write_overview(output_dir, data_overview, ts)
-        elif fmt == "html":
-            w = html_renderer.write_overview(output_dir, data_overview, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Overview failed: {exc}[/red]")
-
-    # --- 2. Technical ---
-    console.print("[dim]  2/12  Technical…[/dim]")
-    try:
-        data_technical = technical.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_technical(output_dir, data_technical, ts)
-        elif fmt == "json":
-            w = json_renderer.write_technical(output_dir, data_technical, ts)
-        elif fmt == "html":
-            w = html_renderer.write_technical(output_dir, data_technical, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Technical failed: {exc}[/red]")
-
-    # --- 3. Tags ---
-    console.print("[dim]  3/12  Tag coverage…[/dim]")
-    try:
-        data_tags = tag_coverage.full_data(conn, conf.tags)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_tag_coverage(output_dir, data_tags, ts)
-        elif fmt == "json":
-            w = json_renderer.write_tag_coverage(output_dir, data_tags, ts)
-        elif fmt == "html":
-            w = html_renderer.write_tag_coverage(output_dir, data_tags, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Tag coverage failed: {exc}[/red]")
-
-    # --- 4. Tag formats ---
-    console.print("[dim]  4/12  Tag formats…[/dim]")
-    try:
-        data_tag_formats = tag_formats.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_tag_formats(output_dir, data_tag_formats, ts)
-        elif fmt == "json":
-            w = json_renderer.write_tag_formats(output_dir, data_tag_formats, ts)
-        elif fmt == "html":
-            w = html_renderer.write_tag_formats(output_dir, data_tag_formats, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Tag formats failed: {exc}[/red]")
-
-    # --- 5. Album consistency ---
-    console.print("[dim]  5/12  Album consistency…[/dim]")
-    try:
-        data_consistency = album_consistency.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_album_consistency(output_dir, data_consistency, ts)
-        elif fmt == "json":
-            w = json_renderer.write_album_consistency(output_dir, data_consistency, ts)
-        elif fmt == "html":
-            w = html_renderer.write_album_consistency(output_dir, data_consistency, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Album consistency failed: {exc}[/red]")
-
-    # --- 6. IDs ---
-    console.print("[dim]  6/12  External IDs…[/dim]")
-    try:
-        data_ids = ids.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_ids(output_dir, data_ids, ts)
-        elif fmt == "json":
-            w = json_renderer.write_ids(output_dir, data_ids, ts)
-        elif fmt == "html":
-            w = html_renderer.write_ids(output_dir, data_ids, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  External IDs failed: {exc}[/red]")
-
-    # --- 7. Duplicates ---
-    console.print("[dim]  7/12  Duplicates…[/dim]")
-    try:
-        data_duplicates = duplicates.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_duplicates(output_dir, data_duplicates, ts)
-        elif fmt == "json":
-            w = json_renderer.write_duplicates(output_dir, data_duplicates, ts)
-        elif fmt == "html":
-            w = html_renderer.write_duplicates(output_dir, data_duplicates, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Duplicates failed: {exc}[/red]")
-
-    # --- 8. Issues ---
-    console.print("[dim]  8/12  Scan issues…[/dim]")
-    try:
-        data_issues = issues.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_issues(output_dir, data_issues, ts)
-        elif fmt == "json":
-            w = json_renderer.write_issues(output_dir, data_issues, ts)
-        elif fmt == "html":
-            w = html_renderer.write_issues(output_dir, data_issues, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Scan issues failed: {exc}[/red]")
-
-    # --- 9. Artists ---
-    console.print("[dim]  9/12  Artists…[/dim]")
-    try:
-        data_artists = artists.full_data(conn, fuzzy_threshold=threshold)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_artists(output_dir, data_artists, ts)
-        elif fmt == "json":
-            w = json_renderer.write_artists(output_dir, data_artists, ts)
-        elif fmt == "html":
-            w = html_renderer.write_artists(output_dir, data_artists, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Artists failed: {exc}[/red]")
-
-    # --- 10. Genres ---
-    console.print("[dim] 10/12  Genres…[/dim]")
-    try:
-        data_genres = genres.full_data(conn, fuzzy_threshold=threshold)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_genres(output_dir, data_genres, ts)
-        elif fmt == "json":
-            w = json_renderer.write_genres(output_dir, data_genres, ts)
-        elif fmt == "html":
-            w = html_renderer.write_genres(output_dir, data_genres, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Genres failed: {exc}[/red]")
-
-    # --- 11. Lyrics ---
-    console.print("[dim] 11/12  Lyrics…[/dim]")
-    try:
-        data_lyrics = lyrics.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_lyrics(output_dir, data_lyrics, ts)
-        elif fmt == "json":
-            w = json_renderer.write_lyrics(output_dir, data_lyrics, ts)
-        elif fmt == "html":
-            w = html_renderer.write_lyrics(output_dir, data_lyrics, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  Lyrics failed: {exc}[/red]")
-
-    # --- 12. ReplayGain ---
-    console.print("[dim] 12/12  ReplayGain…[/dim]")
-    try:
-        data_replaygain = replaygain.full_data(conn)
-        w = []
-        if fmt == "csv":
-            w = csv_renderer.write_replaygain(output_dir, data_replaygain, ts)
-        elif fmt == "json":
-            w = json_renderer.write_replaygain(output_dir, data_replaygain, ts)
-        elif fmt == "html":
-            w = html_renderer.write_replaygain(output_dir, data_replaygain, ts)
-        all_written.extend(w)
-    except Exception as exc:
-        console.print(f"[red]  ReplayGain failed: {exc}[/red]")
+    for i, (label, name, query_fn) in enumerate(report_specs, 1):
+        console.print(f"[dim]  {i:2d}/12  {label}…[/dim]")
+        try:
+            data = query_fn()
+            path = write_report(output_dir, name, data)
+            all_written.append(path)
+        except Exception as exc:
+            console.print(f"[red]  {label} failed: {exc}[/red]")
 
     conn.close()
 
@@ -1139,7 +787,7 @@ def _add_output_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--output",
         type=str,
-        choices=["terminal", "csv", "json", "html"],
+        choices=["terminal", "json"],
         default="terminal",
         help="Output format (default: terminal)",
     )
@@ -1197,12 +845,17 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Available reports",
     )
 
-    # --- all ---
+    # --- all (always JSON, no --output flag) ---
     p_all = report_subs.add_parser(
         "all",
-        help="Generate all 12 reports at once (requires --output csv|json|html)",
+        help="Generate all 12 reports as JSON files",
     )
-    _add_output_args(p_all)
+    p_all.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Directory for output files (default: from config)",
+    )
     _add_config_arg(p_all)
 
     # --- summary (terminal-only, no --output) ---
