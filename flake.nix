@@ -17,6 +17,7 @@
         pythonEnv = pkgs.python312.withPackages (ps: with ps; [
           rich
           mutagen
+          jinja2
         ]);
 
       in

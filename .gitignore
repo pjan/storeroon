@@ -10,7 +10,6 @@ build/
 .direnv/
 result
 result-*
-output
 
 .mypy_cache/
 .pyright/
@@ -25,5 +24,9 @@ output
 
 pyrightconfig.json
 
-storeroon.toml
-data/
+/storeroon.toml
+/data/
+/output/
+/reports/
+
+.DS_Store

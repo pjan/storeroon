@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — storeroon</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --bg-alt: #f5f5f5;
+  --border: #ddd;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --yellow: #d97706;
+  --yellow-bg: #fffbeb;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --dim: #6b7280;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111827;
+    --fg: #e5e7eb;
+    --bg-alt: #1f2937;
+    --border: #374151;
+    --accent: #60a5fa;
+    --accent-light: #1e3a5f;
+    --red: #f87171;
+    --red-bg: #3b1111;
+    --yellow: #fbbf24;
+    --yellow-bg: #3b2e0a;
+    --green: #4ade80;
+    --green-bg: #0a3b1a;
+    --dim: #9ca3af;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  margin: 0;
+  padding: 2rem;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+h1 {
+  font-size: 1.75rem;
+  margin-bottom: 0.25rem;
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.5rem;
+}
+h2 {
+  font-size: 1.3rem;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.35rem;
+}
+h3 {
+  font-size: 1.1rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--dim);
+}
+.meta {
+  color: var(--dim);
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+.meta span { margin-right: 1.5rem; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+thead th {
+  background: var(--bg-alt);
+  border-bottom: 2px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+tbody td {
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tbody tr:hover { background: var(--bg-alt); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 0.85em; }
+.dim { color: var(--dim); }
+.path {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--dim);
+  word-break: break-all;
+  max-width: 400px;
+}
+.severity-critical { color: var(--red); font-weight: bold; }
+.severity-error { color: var(--red); }
+.severity-warning { color: var(--yellow); }
+.severity-info { color: var(--dim); }
+.tag-required { color: var(--green); font-weight: 600; }
+.tag-recommended { color: var(--green); }
+.tag-musicbrainz { color: var(--accent); }
+.tag-discogs { color: var(--accent); }
+.tag-other { color: var(--dim); }
+.tag-alias { color: var(--yellow); }
+.tag-standard_optional { color: var(--dim); }
+.tag-strip { color: var(--red); }
+.tag-unknown { color: var(--red); font-weight: bold; }
+.bar-container {
+  display: inline-block;
+  width: 150px;
+  height: 14px;
+  background: var(--bg-alt);
+  border-radius: 2px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.bar-fill {
+  display: inline-block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  min-width: 1px;
+}
+.bar-fill.bar-red { background: var(--red); }
+.bar-fill.bar-yellow { background: var(--yellow); }
+.bar-fill.bar-green { background: var(--green); }
+.flag {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+.flag-ok { background: var(--green-bg); color: var(--green); }
+.flag-warn { background: var(--yellow-bg); color: var(--yellow); }
+.flag-error { background: var(--red-bg); color: var(--red); }
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.summary-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  text-align: center;
+}
+.summary-card .value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: block;
+}
+.summary-card .label {
+  font-size: 0.8rem;
+  color: var(--dim);
+  display: block;
+  margin-top: 0.25rem;
+}
+.note {
+  background: var(--bg-alt);
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+}
+.empty-state {
+  padding: 2rem;
+  text-align: center;
+  color: var(--dim);
+  font-style: italic;
+}
+@media print {
+  body { padding: 1rem; font-size: 10pt; }
+  h1 { font-size: 14pt; }
+  h2 { font-size: 12pt; }
+  table { font-size: 8pt; }
+  .bar-container { width: 80px; }
+}
+</style>
+</head>
+<body>
+<h1>{{ title }}</h1>
+<div class="meta">
+  <span>Generated: {{ generated_at }}</span>
+  {% if filters %}<span>Filters: {{ filters }}</span>{% endif %}
+</div>
+
+{% for section in sections %}
+<h2>{{ section.heading }}</h2>
+
+{% if section.note %}
+<div class="note">{{ section.note }}</div>
+{% endif %}
+
+{% if section.summary_cards %}
+<div class="summary-grid">
+  {% for card in section.summary_cards %}
+  <div class="summary-card">
+    <span class="value">{{ card.value }}</span>
+    <span class="label">{{ card.label }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if section.tables %}
+{% for tbl in section.tables %}
+{% if tbl.title %}
+<h3>{{ tbl.title }}</h3>
+{% endif %}
+{% if tbl.rows %}
+<table>
+<thead>
+<tr>
+  {% for hdr in tbl.headers %}
+  <th{% if hdr.align %} class="{{ hdr.align }}"{% endif %}>{{ hdr.label }}</th>
+  {% endfor %}
+</tr>
+</thead>
+<tbody>
+  {% for row in tbl.rows %}
+  <tr>
+    {% for cell in row %}
+    <td{% if cell.cls %} class="{{ cell.cls }}"{% endif %}>
+      {% if cell.bar_pct is defined and cell.bar_pct is not none %}
+      <span class="bar-container"><span class="bar-fill{% if cell.bar_cls %} {{ cell.bar_cls }}{% endif %}" style="width:{{ cell.bar_pct }}%"></span></span>
+      {% endif %}
+      {{ cell.value }}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</tbody>
+</table>
+{% if tbl.footer %}
+<p class="dim" style="font-size:0.85rem;">{{ tbl.footer }}</p>
+{% endif %}
+{% else %}
+<p class="empty-state">{{ tbl.empty_message | default("No data.") }}</p>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if section.text_blocks %}
+{% for block in section.text_blocks %}
+<p{% if block.cls %} class="{{ block.cls }}"{% endif %}>{{ block.content }}</p>
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+
+<footer style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--dim); font-size: 0.8rem;">
+  storeroon — music collection management toolchain
+</footer>
+</body>
+</html>

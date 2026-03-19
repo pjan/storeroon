@@ -96,6 +96,222 @@ class LoggingConfig:
 
 
 # ---------------------------------------------------------------------------
+# Tag schema configuration (Sprint 2)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_REQUIRED_TAG_FIELDS: list[str] = [
+    "TITLE",
+    "ARTIST",
+    "ALBUMARTIST",
+    "ALBUM",
+    "DATE",
+    "TRACKNUMBER",
+]
+
+_DEFAULT_RECOMMENDED_TAG_FIELDS: list[str] = [
+    "TOTALTRACKS",
+    "DISCNUMBER",
+    "TOTALDISCS",
+    "ORIGINALDATE",
+    "LABEL",
+    "CATALOGNUMBER",
+    "ISRC",
+    "RELEASETYPE",
+]
+
+_DEFAULT_MUSICBRAINZ_TAG_FIELDS: list[str] = [
+    "MUSICBRAINZ_TRACKID",
+    "MUSICBRAINZ_RELEASETRACKID",
+    "MUSICBRAINZ_ALBUMID",
+    "MUSICBRAINZ_ARTISTID",
+    "MUSICBRAINZ_ALBUMARTISTID",
+    "MUSICBRAINZ_RELEASEGROUPID",
+]
+
+_DEFAULT_DISCOGS_TAG_FIELDS: list[str] = [
+    "DISCOGS_RELEASE_ID",
+    "DISCOGS_ARTIST_ID",
+    "DISCOGS_MASTER_ID",
+    "DISCOGS_LABEL_ID",
+]
+
+_DEFAULT_OTHER_TAG_FIELDS: list[str] = [
+    "LYRICS",
+    "REPLAYGAIN_TRACK_GAIN",
+    "REPLAYGAIN_TRACK_PEAK",
+    "REPLAYGAIN_ALBUM_GAIN",
+    "REPLAYGAIN_ALBUM_PEAK",
+    "MEDIA",
+    "BARCODE",
+    "COMMENT",
+]
+
+_DEFAULT_ALIASES: dict[str, str] = {
+    "YEAR": "DATE",
+    "ORIGINALYEAR": "ORIGINALDATE",
+    "ALBUM ARTIST": "ALBUMARTIST",
+    "TRACKTOTAL": "TOTALTRACKS",
+    "DISCTOTAL": "TOTALDISCS",
+    "DISCS": "TOTALDISCS",
+}
+
+_DEFAULT_STANDARD_OPTIONAL_FIELDS: list[str] = [
+    "COMPOSER",
+    "LYRICIST",
+    "CONDUCTOR",
+    "PERFORMER",
+    "ENSEMBLE",
+    "OPUS",
+    "PART",
+    "MOVEMENT",
+    "WORK",
+    "SUBTITLE",
+    "GROUPING",
+    "MOOD",
+    "BPM",
+    "KEY",
+    "LANGUAGE",
+    "SCRIPT",
+    "ACOUSTID_ID",
+    "ACOUSTID_FINGERPRINT",
+    "REPLAYGAIN_REFERENCE_LOUDNESS",
+    "ACCURATERIPCRC",
+    "ACCURATERIPCOUNT",
+    "ACCURATERIPRESULT",
+    "ACCURATERIPDISCID",
+    "ENCODEDBY",
+    "ENCODING",
+    "ENCODERSETTINGS",
+    "SOURCE",
+    "SOURCEMEDIA",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class TagsConfig:
+    """Canonical tag schema configuration.
+
+    All field lists are upper-cased tuples for consistent lookup.
+    ``aliases`` maps non-canonical upper-cased keys to their canonical
+    replacement (also upper-cased).
+    """
+
+    required: tuple[str, ...]
+    recommended: tuple[str, ...]
+    musicbrainz: tuple[str, ...]
+    discogs: tuple[str, ...]
+    other: tuple[str, ...]
+    aliases: dict[str, str]
+    standard_optional: tuple[str, ...]
+    strip: tuple[str, ...]
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> TagsConfig:
+        """Build from the ``[tags]`` / ``[tags.*]`` section of the TOML."""
+
+        def _fields(
+            section: dict[str, Any],
+            key: str = "fields",
+            default: list[str] | None = None,
+        ) -> tuple[str, ...]:
+            values = section.get(key, default or [])
+            return tuple(v.upper() for v in values)
+
+        req_section = raw.get("required", {})
+        rec_section = raw.get("recommended", {})
+        mb_section = raw.get("musicbrainz", {})
+        discogs_section = raw.get("discogs", {})
+        other_section = raw.get("other", {})
+        alias_section = raw.get("aliases", {})
+        stdopt_section = raw.get("standard_optional", {})
+        strip_section = raw.get("strip", {})
+
+        # Aliases: keys and values are both upper-cased.
+        aliases: dict[str, str] = {}
+        source_aliases = alias_section if alias_section else _DEFAULT_ALIASES
+        for alias_key, canonical_val in source_aliases.items():
+            aliases[alias_key.upper()] = canonical_val.upper()
+
+        return cls(
+            required=_fields(req_section, default=_DEFAULT_REQUIRED_TAG_FIELDS),
+            recommended=_fields(rec_section, default=_DEFAULT_RECOMMENDED_TAG_FIELDS),
+            musicbrainz=_fields(mb_section, default=_DEFAULT_MUSICBRAINZ_TAG_FIELDS),
+            discogs=_fields(discogs_section, default=_DEFAULT_DISCOGS_TAG_FIELDS),
+            other=_fields(other_section, default=_DEFAULT_OTHER_TAG_FIELDS),
+            aliases=aliases,
+            standard_optional=_fields(
+                stdopt_section, default=_DEFAULT_STANDARD_OPTIONAL_FIELDS
+            ),
+            strip=_fields(strip_section, default=[]),
+        )
+
+    def all_known_keys(self) -> frozenset[str]:
+        """Return the set of all tag keys that appear in any config list
+        (required, recommended, musicbrainz, discogs, other, aliases,
+        standard_optional, strip).  All keys are upper-cased."""
+        keys: set[str] = set()
+        keys.update(self.required)
+        keys.update(self.recommended)
+        keys.update(self.musicbrainz)
+        keys.update(self.discogs)
+        keys.update(self.other)
+        keys.update(self.aliases.keys())
+        keys.update(self.aliases.values())
+        keys.update(self.standard_optional)
+        keys.update(self.strip)
+        return frozenset(keys)
+
+    def classify(self, key_upper: str) -> str:
+        """Classify an upper-cased tag key against the config lists.
+
+        Returns one of: ``'required'``, ``'recommended'``, ``'musicbrainz'``,
+        ``'discogs'``, ``'other'``, ``'alias'``, ``'standard_optional'``,
+        ``'strip'``, or ``'unknown'``.
+        """
+        if key_upper in self.required:
+            return "required"
+        if key_upper in self.recommended:
+            return "recommended"
+        if key_upper in self.musicbrainz:
+            return "musicbrainz"
+        if key_upper in self.discogs:
+            return "discogs"
+        if key_upper in self.other:
+            return "other"
+        if key_upper in self.aliases:
+            return "alias"
+        if key_upper in self.standard_optional:
+            return "standard_optional"
+        if key_upper in self.strip:
+            return "strip"
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Reports configuration (Sprint 2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ReportsConfig:
+    """Configuration for Sprint 2 analysis reports."""
+
+    fuzzy_threshold: float
+    output_dir: Path
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> ReportsConfig:
+        threshold = float(raw.get("fuzzy_threshold", 0.85))
+        if not (0.0 <= threshold <= 1.0):
+            raise ConfigError(
+                "[reports] fuzzy_threshold must be between 0.0 and 1.0, "
+                f"got {threshold}"
+            )
+        output_dir = Path(raw.get("output_dir", "reports"))
+        return cls(fuzzy_threshold=threshold, output_dir=output_dir)
+
+
+# ---------------------------------------------------------------------------
 # Top-level config
 # ---------------------------------------------------------------------------
 
@@ -109,6 +325,8 @@ class Config:
     database: DatabaseConfig
     scan: ScanConfig
     logging: LoggingConfig
+    tags: TagsConfig
+    reports: ReportsConfig
 
 
 # ---------------------------------------------------------------------------
@@ -171,4 +389,6 @@ def load(path: str | Path | None = None) -> Config:
         database=DatabaseConfig.from_dict(raw.get("database", {})),
         scan=ScanConfig.from_dict(raw.get("scan", {})),
         logging=LoggingConfig.from_dict(raw.get("logging", {})),
+        tags=TagsConfig.from_dict(raw.get("tags", {})),
+        reports=ReportsConfig.from_dict(raw.get("reports", {})),
     )

@@ -33,3 +33,120 @@ batch_size = 500
 [logging]
 # Minimum log level: debug, info, warning, error
 level = "info"
+
+# -------------------------------------------------------------------------
+# Reports configuration (Sprint 2)
+# -------------------------------------------------------------------------
+
+[reports]
+# Fuzzy similarity threshold for artist name and genre matching.
+# Values between 0.0 (no similarity) and 1.0 (identical).
+# Used by `report artists` and `report genres` for Pass 2 fuzzy matching.
+fuzzy_threshold = 0.85
+
+# Default output directory for report files (CSV, JSON, HTML).
+# Created automatically if it does not exist. Existing files are
+# overwritten silently.
+output_dir = "reports"
+
+# -------------------------------------------------------------------------
+# Canonical tag schema
+#
+# These lists define how tags are classified in Sprint 2 reports and
+# how normalisation works in Sprint 4. Tag lists are read at runtime —
+# they are never hardcoded in the report logic.
+# -------------------------------------------------------------------------
+
+[tags.required]
+# Every FLAC file MUST have these tags. Missing any of them raises a
+# "missing_required_tag" scan issue.
+fields = ["TITLE", "ARTIST", "ALBUMARTIST", "ALBUM", "DATE", "TRACKNUMBER"]
+
+[tags.recommended]
+# Highly desirable tags. Missing coverage above 20% is flagged as a
+# warning in the tag coverage report.
+fields = [
+    "TOTALTRACKS",
+    "DISCNUMBER",
+    "TOTALDISCS",
+    "ORIGINALDATE",
+    "LABEL",
+    "CATALOGNUMBER",
+    "ISRC",
+    "RELEASETYPE",
+]
+
+[tags.musicbrainz]
+# MusicBrainz identifier tags. Validated as UUID v4 format in the
+# tag-formats report. Used for matching in Sprint 3.
+fields = [
+    "MUSICBRAINZ_TRACKID",
+    "MUSICBRAINZ_RELEASETRACKID",
+    "MUSICBRAINZ_ALBUMID",
+    "MUSICBRAINZ_ARTISTID",
+    "MUSICBRAINZ_ALBUMARTISTID",
+    "MUSICBRAINZ_RELEASEGROUPID",
+]
+
+[tags.other]
+# Tracked but not canonical — informational coverage only.
+# Presence/absence is reported but not treated as a deficiency.
+fields = [
+    "LYRICS",
+    "REPLAYGAIN_TRACK_GAIN",
+    "REPLAYGAIN_TRACK_PEAK",
+    "REPLAYGAIN_ALBUM_GAIN",
+    "REPLAYGAIN_ALBUM_PEAK",
+    "MEDIA",
+    "BARCODE",
+    "COMMENT",
+]
+
+[tags.aliases]
+# Maps non-canonical key (uppercased) to its canonical replacement.
+# Files using these keys need key renaming in Phase 4.
+YEAR            = "DATE"
+ORIGINALYEAR    = "ORIGINALDATE"
+"ALBUM ARTIST"  = "ALBUMARTIST"
+TRACKTOTAL      = "TOTALTRACKS"
+DISCTOTAL       = "TOTALDISCS"
+DISCS           = "TOTALDISCS"
+
+[tags.standard_optional]
+# Legitimate tags that are out of canonical scope but should not be
+# stripped. Informational only; presence/absence not reported as issues.
+fields = [
+    "COMPOSER",
+    "LYRICIST",
+    "CONDUCTOR",
+    "PERFORMER",
+    "ENSEMBLE",
+    "OPUS",
+    "PART",
+    "MOVEMENT",
+    "WORK",
+    "SUBTITLE",
+    "GROUPING",
+    "MOOD",
+    "BPM",
+    "KEY",
+    "LANGUAGE",
+    "SCRIPT",
+    "ACOUSTID_ID",
+    "ACOUSTID_FINGERPRINT",
+    "REPLAYGAIN_REFERENCE_LOUDNESS",
+    "ACCURATERIPCRC",
+    "ACCURATERIPCOUNT",
+    "ACCURATERIPRESULT",
+    "ACCURATERIPDISCID",
+    "ENCODEDBY",
+    "ENCODING",
+    "ENCODERSETTINGS",
+    "SOURCE",
+    "SOURCEMEDIA",
+]
+
+[tags.strip]
+# Tags to remove during Phase 4 normalisation. Populated after reviewing
+# the "unknown" keys section of `report tags`. Left empty initially.
+fields = []

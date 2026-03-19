@@ -4,6 +4,10 @@ Rich CLI for storeroon.
 Entry points:
     python -m storeroon scan --root /path/to/collection [--dry-run]
     python -m storeroon scan --config storeroon.toml [--dry-run]
+    python -m storeroon report summary
+    python -m storeroon report overview [--output terminal|csv|json|html]
+    python -m storeroon report technical [--output ...]
+    ... (see ``storeroon report --help`` for all subcommands)
 """
 
 from __future__ import annotations
@@ -31,6 +35,7 @@ from rich.table import Table
 
 from storeroon import config as cfg
 from storeroon.db import MigrationError, connect, migrate
+from storeroon.reports.cli import build_report_parser, dispatch_report
 from storeroon.scanner import (
     DuplicateStats,
     ImportStats,
@@ -297,6 +302,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Analyse files without writing to the database",
     )
 
+    # --- report -----------------------------------------------------------
+    build_report_parser(subparsers)
+
     return parser
 
 
@@ -316,6 +324,8 @@ def cli() -> None:
 
     if args.command == "scan":
         sys.exit(_cmd_scan(args))
+    elif args.command == "report":
+        sys.exit(dispatch_report(args))
     else:
         parser.print_help()
         sys.exit(1)
