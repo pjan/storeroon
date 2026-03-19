@@ -15,12 +15,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from rich.tree import Tree
-
 from storeroon.reports.models import (
     AlbumConsistencyFullData,
     AlbumConsistencySummaryData,
-    ArtistBreakdown,
     ArtistsFullData,
     ArtistsSummaryData,
     BucketCount,
@@ -117,12 +114,9 @@ def _no_results_message(console: Console) -> None:
 # =========================================================================
 
 
-def _stats_label(tracks: int, discs: int, size: int, duration: float) -> str:
-    """Format a compact stats label for a tree node."""
-    return (
-        f"{fmt_count(tracks)} tracks · {fmt_count(discs)} discs · "
-        f"{fmt_size_gb(size)} · {fmt_duration_hms(duration)}"
-    )
+def _indent(text: str, level: int) -> str:
+    """Indent text with spaces for hierarchy depth."""
+    return "  " * level + text
 
 
 def render_overview(console: Console, data: OverviewFullData) -> None:
@@ -133,7 +127,7 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
 
     _section_heading(console, "Collection Overview")
 
-    # Table 1: Top-level totals.
+    # Top-level totals.
     t = data.totals
     totals_table = Table(title="Collection Totals", show_header=False, min_width=50)
     totals_table.add_column("Metric", style="bold")
@@ -145,47 +139,59 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
     totals_table.add_row("Total size", fmt_size_gb(t.total_size_bytes))
     console.print(totals_table)
 
-    # Tree: Hierarchical breakdown.
+    # Hierarchical breakdown as an indented table.
     if data.by_artist:
         _subsection_heading(console, "Collection Breakdown")
-        tree = Tree(f"[bold]{fmt_count(t.total_artists)} artists[/bold]")
+        tbl = Table(show_header=True, header_style="bold", pad_edge=False)
+        tbl.add_column("Name", min_width=40)
+        tbl.add_column("Tracks", justify="right")
+        tbl.add_column("Discs", justify="right")
+        tbl.add_column("Size", justify="right")
+        tbl.add_column("Duration", justify="right")
+
         for a in data.by_artist:
-            artist_node = tree.add(
-                f"[cyan bold]{a.artist}[/cyan bold]  [dim]{_stats_label(a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds)}[/dim]"
+            tbl.add_row(
+                f"[cyan bold]{a.artist}[/cyan bold]",
+                fmt_count(a.track_count),
+                fmt_count(a.disc_count),
+                fmt_size_gb(a.total_size_bytes),
+                fmt_duration_hms(a.total_duration_seconds),
             )
             for ft in a.folder_types:
-                ft_node = artist_node.add(
-                    f"[green]{ft.folder_type}[/green]  [dim]{_stats_label(ft.track_count, ft.disc_count, ft.total_size_bytes, ft.total_duration_seconds)}[/dim]"
+                tbl.add_row(
+                    f"[green]{_indent(ft.folder_type, 1)}[/green]",
+                    fmt_count(ft.track_count),
+                    fmt_count(ft.disc_count),
+                    fmt_size_gb(ft.total_size_bytes),
+                    fmt_duration_hms(ft.total_duration_seconds),
                 )
                 for rg in ft.release_groups:
                     if len(rg.pressings) == 1:
                         p = rg.pressings[0]
-                        ft_node.add(
-                            f"{rg.release_group}  [dim]{_stats_label(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}[/dim]"
+                        tbl.add_row(
+                            _indent(rg.release_group, 2),
+                            fmt_count(p.track_count),
+                            fmt_count(p.disc_count),
+                            fmt_size_gb(p.total_size_bytes),
+                            fmt_duration_hms(p.total_duration_seconds),
                         )
                     else:
-                        rg_node = ft_node.add(
-                            f"{rg.release_group}  [dim]{_stats_label(rg.track_count, rg.disc_count, rg.total_size_bytes, rg.total_duration_seconds)}[/dim]"
+                        tbl.add_row(
+                            _indent(rg.release_group, 2),
+                            fmt_count(rg.track_count),
+                            fmt_count(rg.disc_count),
+                            fmt_size_gb(rg.total_size_bytes),
+                            fmt_duration_hms(rg.total_duration_seconds),
                         )
                         for p in rg.pressings:
-                            rg_node.add(
-                                f"[dim]{p.pressing_name}  {_stats_label(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}[/dim]"
+                            tbl.add_row(
+                                f"[dim]{_indent(p.pressing_name, 3)}[/dim]",
+                                f"[dim]{fmt_count(p.track_count)}[/dim]",
+                                f"[dim]{fmt_count(p.disc_count)}[/dim]",
+                                f"[dim]{fmt_size_gb(p.total_size_bytes)}[/dim]",
+                                f"[dim]{fmt_duration_hms(p.total_duration_seconds)}[/dim]",
                             )
-        console.print(tree)
-
-    # Distribution summary.
-    _subsection_heading(console, "Distribution Summary")
-    dist = data.distribution
-    dist_table = Table(show_header=False, min_width=40)
-    dist_table.add_column("Metric", style="bold")
-    dist_table.add_column("Value", justify="right")
-    dist_table.add_row(
-        "Median track duration", fmt_duration_short(dist.median_track_duration_seconds)
-    )
-    dist_table.add_row("Median file size", fmt_bytes(dist.median_file_size_bytes))
-    dist_table.add_row("Average bitrate", f"{dist.avg_bitrate_kbps:.0f} kbps")
-    dist_table.add_row("Median bitrate", f"{dist.median_bitrate_kbps:.0f} kbps")
-    console.print(dist_table)
+        console.print(tbl)
 
 
 def render_overview_summary(console: Console, data: OverviewSummaryData) -> None:

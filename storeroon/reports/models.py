@@ -153,22 +153,11 @@ class ArtistBreakdown:
 
 
 @dataclass(frozen=True, slots=True)
-class DistributionSummary:
-    """Median / average stats for the overview report."""
-
-    median_track_duration_seconds: float
-    median_file_size_bytes: int
-    avg_bitrate_kbps: float
-    median_bitrate_kbps: float
-
-
-@dataclass(frozen=True, slots=True)
 class OverviewFullData:
     """Complete data for the collection overview report."""
 
     totals: OverviewTotals
     by_artist: list[ArtistBreakdown]
-    distribution: DistributionSummary
 
 
 @dataclass(frozen=True, slots=True)

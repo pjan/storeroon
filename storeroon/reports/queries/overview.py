@@ -16,7 +16,6 @@ from collections import defaultdict
 
 from storeroon.reports.models import (
     ArtistBreakdown,
-    DistributionSummary,
     FolderTypeBreakdown,
     OverviewFullData,
     OverviewSummaryData,
@@ -24,7 +23,6 @@ from storeroon.reports.models import (
     PressingBreakdown,
     ReleaseGroupBreakdown,
 )
-from storeroon.reports.utils import median, safe_div
 
 # ---------------------------------------------------------------------------
 # Path segment helpers
@@ -206,45 +204,6 @@ def _query_hierarchy(conn: sqlite3.Connection) -> list[ArtistBreakdown]:
 
 
 # ---------------------------------------------------------------------------
-# Distribution summary (median / average stats)
-# ---------------------------------------------------------------------------
-
-_DURATIONS_SQL = """
-SELECT duration_seconds
-FROM flac_properties
-WHERE duration_seconds IS NOT NULL
-ORDER BY duration_seconds
-"""
-
-_FILE_SIZES_SQL = """
-SELECT f.size_bytes
-FROM files f
-WHERE f.status = 'ok' AND f.size_bytes IS NOT NULL
-ORDER BY f.size_bytes
-"""
-
-_BITRATES_SQL = """
-SELECT approx_bitrate_kbps
-FROM flac_properties
-WHERE approx_bitrate_kbps IS NOT NULL
-ORDER BY approx_bitrate_kbps
-"""
-
-
-def _query_distribution(conn: sqlite3.Connection) -> DistributionSummary:
-    durations = [row[0] for row in conn.execute(_DURATIONS_SQL).fetchall()]
-    sizes = [row[0] for row in conn.execute(_FILE_SIZES_SQL).fetchall()]
-    bitrates = [row[0] for row in conn.execute(_BITRATES_SQL).fetchall()]
-
-    return DistributionSummary(
-        median_track_duration_seconds=median(durations),
-        median_file_size_bytes=int(median(sizes)),
-        avg_bitrate_kbps=safe_div(sum(bitrates), len(bitrates)),
-        median_bitrate_kbps=median(bitrates),
-    )
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -253,11 +212,9 @@ def full_data(conn: sqlite3.Connection) -> OverviewFullData:
     """Return the complete dataset for ``report overview``."""
     totals = _query_totals(conn)
     by_artist = _query_hierarchy(conn)
-    distribution = _query_distribution(conn)
     return OverviewFullData(
         totals=totals,
         by_artist=by_artist,
-        distribution=distribution,
     )
 
 

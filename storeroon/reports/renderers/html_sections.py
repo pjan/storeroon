@@ -33,7 +33,6 @@ from storeroon.reports.models import (
     TechnicalFullData,
 )
 from storeroon.reports.utils import (
-    fmt_bytes,
     fmt_count,
     fmt_duration_hms,
     fmt_duration_short,
@@ -165,55 +164,105 @@ def _bucket_table(
 # =========================================================================
 
 
-def _stats_cols(tracks: int, discs: int, size: int, duration: float) -> str:
-    """Format the right-hand stats for a hierarchy row."""
+def _hierarchy_row(
+    name_html: str,
+    indent: int,
+    tracks: int,
+    discs: int,
+    size: int,
+    duration: float,
+) -> str:
+    """Build a single <tr> for the hierarchy table."""
+    pad = f"padding-left:{indent * 1.5}rem" if indent else ""
     return (
-        f'<span class="num" style="display:inline-block;min-width:5em">{fmt_count(tracks)} tracks</span>'
-        f' &nbsp; <span class="num" style="display:inline-block;min-width:4em">{fmt_count(discs)} discs</span>'
-        f' &nbsp; <span class="num" style="display:inline-block;min-width:5em">{fmt_size_gb(size)}</span>'
-        f' &nbsp; <span class="num" style="display:inline-block;min-width:6em">{fmt_duration_hms(duration)}</span>'
+        f'<tr>'
+        f'<td style="{pad}">{name_html}</td>'
+        f'<td class="num">{fmt_count(tracks)}</td>'
+        f'<td class="num">{fmt_count(discs)}</td>'
+        f'<td class="num">{fmt_size_gb(size)}</td>'
+        f'<td class="num">{fmt_duration_hms(duration)}</td>'
+        f'</tr>'
     )
 
 
 def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
-    """Build nested <details> HTML for the artist hierarchy."""
-    parts: list[str] = []
+    """Build a table with nested <details> for the artist hierarchy."""
+    parts: list[str] = [
+        '<table style="width:100%;border-collapse:collapse">',
+        '<thead><tr>'
+        '<th style="text-align:left">Name</th>'
+        '<th class="num">Tracks</th>'
+        '<th class="num">Discs</th>'
+        '<th class="num">Size</th>'
+        '<th class="num">Duration</th>'
+        '</tr></thead>',
+        '<tbody>',
+    ]
+
     for a in artists:
-        parts.append(
-            f'<details><summary style="cursor:pointer;padding:0.3rem 0">'
-            f'<strong>{a.artist}</strong> &mdash; {_stats_cols(a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds)}'
-            f'</summary><div style="margin-left:1.5rem">'
-        )
+        # Artist row — expandable
+        summary = f'<strong>{a.artist}</strong>'
+        inner: list[str] = []
         for ft in a.folder_types:
-            parts.append(
-                f'<details><summary style="cursor:pointer;padding:0.2rem 0">'
-                f'{ft.folder_type} &mdash; {_stats_cols(ft.track_count, ft.disc_count, ft.total_size_bytes, ft.total_duration_seconds)}'
-                f'</summary><div style="margin-left:1.5rem">'
-            )
+            # Folder type row — expandable
+            ft_inner: list[str] = []
             for rg in ft.release_groups:
                 if len(rg.pressings) == 1:
-                    # Single pressing — no need for another expand level
                     p = rg.pressings[0]
-                    parts.append(
-                        f'<div style="padding:0.15rem 0">'
-                        f'{rg.release_group} &mdash; {_stats_cols(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}'
-                        f'</div>'
-                    )
+                    ft_inner.append(_hierarchy_row(
+                        rg.release_group, 3,
+                        p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds,
+                    ))
                 else:
-                    parts.append(
-                        f'<details><summary style="cursor:pointer;padding:0.15rem 0">'
-                        f'{rg.release_group} &mdash; {_stats_cols(rg.track_count, rg.disc_count, rg.total_size_bytes, rg.total_duration_seconds)}'
-                        f'</summary><div style="margin-left:1.5rem">'
-                    )
+                    rg_inner: list[str] = []
                     for p in rg.pressings:
-                        parts.append(
-                            f'<div style="padding:0.1rem 0;color:var(--dim);font-size:0.9em">'
-                            f'{p.pressing_name} &mdash; {_stats_cols(p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds)}'
-                            f'</div>'
-                        )
-                    parts.append('</div></details>')
-            parts.append('</div></details>')
-        parts.append('</div></details>')
+                        rg_inner.append(_hierarchy_row(
+                            f'<span class="dim">{p.pressing_name}</span>', 4,
+                            p.track_count, p.disc_count, p.total_size_bytes, p.total_duration_seconds,
+                        ))
+                    ft_inner.append(_hierarchy_row(
+                        f'<details><summary style="cursor:pointer">{rg.release_group}</summary></details>', 3,
+                        rg.track_count, rg.disc_count, rg.total_size_bytes, rg.total_duration_seconds,
+                    ))
+                    # Child rows hidden in a details-controlled block
+                    ft_inner.append(
+                        f'<tr class="rg-children" style="display:none"><td colspan="5">'
+                        f'<table style="width:100%;border-collapse:collapse">{"".join(rg_inner)}</table>'
+                        f'</td></tr>'
+                    )
+            inner.append(_hierarchy_row(
+                f'<details><summary style="cursor:pointer">{ft.folder_type}</summary></details>', 2,
+                ft.track_count, ft.disc_count, ft.total_size_bytes, ft.total_duration_seconds,
+            ))
+            inner.append(
+                f'<tr class="ft-children" style="display:none"><td colspan="5">'
+                f'<table style="width:100%;border-collapse:collapse">{"".join(ft_inner)}</table>'
+                f'</td></tr>'
+            )
+
+        parts.append(_hierarchy_row(
+            f'<details><summary style="cursor:pointer"><strong>{a.artist}</strong></summary></details>', 0,
+            a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds,
+        ))
+        parts.append(
+            f'<tr class="artist-children" style="display:none"><td colspan="5">'
+            f'<table style="width:100%;border-collapse:collapse">{"".join(inner)}</table>'
+            f'</td></tr>'
+        )
+
+    parts.append('</tbody></table>')
+
+    # Minimal inline JS to toggle child rows when <details> is toggled.
+    # Each <details> in a cell controls the next sibling <tr>.
+    parts.append('''<script>
+document.querySelectorAll('td details').forEach(d => {
+  d.addEventListener('toggle', () => {
+    const childRow = d.closest('tr').nextElementSibling;
+    if (childRow) childRow.style.display = d.open ? '' : 'none';
+  });
+});
+</script>''')
+
     return "\n".join(parts)
 
 
@@ -242,22 +291,6 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
                 text_blocks=[_text(hierarchy_html)],
             )
         )
-
-    dist = data.distribution
-    sections.append(
-        _section(
-            "Distribution Summary",
-            summary_cards=[
-                _card(
-                    fmt_duration_short(dist.median_track_duration_seconds),
-                    "Median Track Duration",
-                ),
-                _card(fmt_bytes(dist.median_file_size_bytes), "Median File Size"),
-                _card(f"{dist.avg_bitrate_kbps:.0f} kbps", "Average Bitrate"),
-                _card(f"{dist.median_bitrate_kbps:.0f} kbps", "Median Bitrate"),
-            ],
-        )
-    )
 
     return sections
 

@@ -868,7 +868,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     # --- overview ---
     p_overview = report_subs.add_parser(
         "overview",
-        help="Collection overview: totals, release types, distributions",
+        help="Collection overview: totals, hierarchical artist breakdown",
     )
     _add_output_args(p_overview)
     _add_config_arg(p_overview)
