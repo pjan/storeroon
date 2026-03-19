@@ -529,62 +529,61 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
     _section_heading(console, "Tag Quality & Integrity")
     console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
 
-    # ── Field format sections ──
-    for section in data.field_sections:
-        _subsection_heading(console, f"Field: {section.field_name}")
+    # ── Grouped field validation tables ──
+    for group in data.groups:
+        if not group.fields:
+            continue
+        _subsection_heading(console, group.group_name)
 
-        s = section.summary
         table = Table(show_header=True, header_style="bold")
-        table.add_column("Status")
-        table.add_column("Count", justify="right")
-        table.add_column("%", justify="right")
+        table.add_column("Tag Key", style="cyan")
+        table.add_column("Valid", justify="right")
+        table.add_column("Valid %", justify="right")
+        table.add_column("Invalid", justify="right")
+        table.add_column("Invalid %", justify="right")
+        table.add_column("Absent", justify="right")
+        table.add_column("Absent %", justify="right")
+        table.add_column("Date Format")
 
-        table.add_row(
-            Text("Valid", style="green"),
-            fmt_count(s.valid_count),
-            fmt_pct(s.valid_pct),
-        )
-        inv_style = "red" if s.invalid_count > 0 else ""
-        table.add_row(
-            Text("Invalid", style=inv_style),
-            Text(fmt_count(s.invalid_count), style=inv_style),
-            Text(fmt_pct(s.invalid_pct), style=inv_style),
-        )
-        table.add_row("Absent", fmt_count(s.absent_count), fmt_pct(s.absent_pct))
+        for sec in group.fields:
+            s = sec.summary
+            inv_style = "red" if s.invalid_count > 0 else ""
+
+            # Date precision info.
+            date_info = ""
+            if sec.field_name in ("DATE", "ORIGINALDATE") and sec.extra.get("date_precision"):
+                parts = [
+                    f"{dp.precision.replace('_', ' ')}: {fmt_pct(dp.percentage)}"
+                    for dp in sec.extra["date_precision"]
+                    if dp.precision != "invalid"
+                ]
+                date_info = ", ".join(parts)
+
+            table.add_row(
+                sec.field_name,
+                fmt_count(s.valid_count),
+                fmt_pct(s.valid_pct),
+                Text(fmt_count(s.invalid_count), style=inv_style),
+                Text(fmt_pct(s.invalid_pct), style=inv_style),
+                fmt_count(s.absent_count),
+                fmt_pct(s.absent_pct),
+                Text(date_info, style="dim") if date_info else "",
+            )
         console.print(table)
 
-        # Extra distributions (e.g. date precision).
-        for extra_name, extra_rows in section.extra.items():
-            if extra_rows:
-                ext_table = Table(
-                    title=extra_name.replace("_", " ").title(),
-                    show_header=True,
-                    header_style="bold",
+        # Invalid values per field.
+        for sec in group.fields:
+            if sec.invalid_values:
+                iv_table = Table(
+                    title=f"Invalid Values — {sec.field_name} "
+                    f"(top {len(sec.invalid_values)} of {sec.invalid_values_total})",
+                    show_header=True, header_style="bold",
                 )
-                ext_table.add_column("Precision", style="cyan")
-                ext_table.add_column("Count", justify="right")
-                ext_table.add_column("%", justify="right")
-                for er in extra_rows:
-                    ext_table.add_row(
-                        er.precision,
-                        fmt_count(er.count),
-                        fmt_pct(er.percentage),
-                    )
-                console.print(ext_table)
-
-        # Invalid values.
-        if section.invalid_values:
-            iv_table = Table(
-                title=f"Invalid Values (top {len(section.invalid_values)} "
-                f"of {section.invalid_values_total})",
-                show_header=True,
-                header_style="bold",
-            )
-            iv_table.add_column("Value")
-            iv_table.add_column("Count", justify="right")
-            for iv in section.invalid_values:
-                iv_table.add_row(iv.value, fmt_count(iv.count))
-            console.print(iv_table)
+                iv_table.add_column("Value")
+                iv_table.add_column("Count", justify="right")
+                for iv in sec.invalid_values:
+                    iv_table.add_row(iv.value, fmt_count(iv.count))
+                console.print(iv_table)
 
     # ── MusicBrainz & Discogs ID sections ──
     for section in [data.musicbrainz, data.discogs]:

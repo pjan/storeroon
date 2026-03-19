@@ -390,11 +390,19 @@ class IdSectionData:
 
 
 @dataclass(frozen=True, slots=True)
+class TagGroupQuality:
+    """Format validation results for a config tag group (required/recommended/other)."""
+
+    group_name: str  # "Required Tags", "Recommended Tags", "Other Tracked Tags"
+    fields: list[FieldFormatSection]
+
+
+@dataclass(frozen=True, slots=True)
 class TagQualityFullData:
     """Complete data for the tag quality and integrity report."""
 
     total_files: int
-    field_sections: list[FieldFormatSection]  # date, track/disc, ISRC validation
+    groups: list[TagGroupQuality]  # grouped by config section
     musicbrainz: IdSectionData
     discogs: IdSectionData
 

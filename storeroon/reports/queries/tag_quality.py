@@ -21,6 +21,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from collections.abc import Callable
 
+from storeroon.config import TagsConfig
 from storeroon.reports.models import (
     BackfillCandidate,
     DatePrecisionRow,
@@ -31,6 +32,7 @@ from storeroon.reports.models import (
     IdSectionData,
     InvalidValueRow,
     PartialAlbumCoverage,
+    TagGroupQuality,
     TagQualityFullData,
     TagQualitySummaryData,
 )
@@ -672,20 +674,73 @@ def _overall_coverage_pct(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Specialised analysers per tag type
+# ---------------------------------------------------------------------------
+
+# Tags with specific format validators.
+_DATE_TAGS = frozenset({"DATE", "ORIGINALDATE"})
+_POSITIVE_INT_TAGS = frozenset({"DISCNUMBER", "DISCTOTAL", "TOTALDISCS"})
+_TRACKNUMBER_TAG = "TRACKNUMBER"
+_ISRC_TAG = "ISRC"
+
+
+def _analyse_tag(
+    conn: sqlite3.Connection,
+    tag_key: str,
+    total_files: int,
+    *,
+    artist_filter: str | None = None,
+) -> FieldFormatSection:
+    """Run the appropriate format validation for a tag key."""
+    key = tag_key.upper()
+    if key in _DATE_TAGS:
+        return _analyse_date_field(conn, key, total_files, artist_filter=artist_filter)
+    if key == _TRACKNUMBER_TAG:
+        return _analyse_tracknumber(conn, total_files, artist_filter=artist_filter)
+    if key == "DISCNUMBER":
+        return _analyse_discnumber_cross_check(conn, total_files, artist_filter=artist_filter)
+    if key in _POSITIVE_INT_TAGS:
+        return _analyse_field(conn, key, total_files, _validate_positive_int, artist_filter=artist_filter)
+    if key == _ISRC_TAG:
+        return _analyse_isrc(conn, total_files, artist_filter=artist_filter)
+    # Default: any non-empty string is valid.
+    return _analyse_field(conn, key, total_files, lambda v: bool(v.strip()), artist_filter=artist_filter)
+
+
+def _analyse_group(
+    conn: sqlite3.Connection,
+    group_name: str,
+    keys: tuple[str, ...],
+    total_files: int,
+    *,
+    artist_filter: str | None = None,
+) -> TagGroupQuality:
+    """Analyse all tags in a config group."""
+    fields = [_analyse_tag(conn, key, total_files, artist_filter=artist_filter) for key in keys]
+    return TagGroupQuality(group_name=group_name, fields=fields)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
 def full_data(
-    conn: sqlite3.Connection, *, artist_filter: str | None = None
+    conn: sqlite3.Connection,
+    tags_config: TagsConfig,
+    *,
+    artist_filter: str | None = None,
 ) -> TagQualityFullData:
     """Return the complete dataset for ``report tag-quality``."""
     total_files = _get_total_ok_files(conn, artist_filter)
 
-    # Field format validation sections.
-    field_sections: list[FieldFormatSection] = []
-    field_sections.append(_analyse_date_field(conn, "DATE", total_files, artist_filter=artist_filter))
-    field_sections.append(_analyse_date_field(conn, "ORIGINALDATE", total_files, artist_filter=artist_filter))
-    field_sections.append(_analyse_tracknumber(conn, total_files, artist_filter=artist_filter))
-    field_sections.append(_analyse_discnumber_cross_check(conn, total_files, artist_filter=artist_filter))
-    field_sections.append(_analyse_field(conn, "TOTALDISCS", total_files, _validate_positive_int, artist_filter=artist_filter))
-    field_sections.append(_analyse_isrc(conn, total_files, artist_filter=artist_filter))
+    # Field format validation grouped by config section.
+    groups: list[TagGroupQuality] = [
+        _analyse_group(conn, "Required Tags", tags_config.required, total_files, artist_filter=artist_filter),
+        _analyse_group(conn, "Recommended Tags", tags_config.recommended, total_files, artist_filter=artist_filter),
+        _analyse_group(conn, "Other Tracked Tags", tags_config.other, total_files, artist_filter=artist_filter),
+    ]
 
     # External ID sections.
     file_album_dirs, _ = _build_file_album_dir_map(conn, artist_filter)
@@ -696,21 +751,23 @@ def full_data(
 
     return TagQualityFullData(
         total_files=total_files,
-        field_sections=field_sections,
+        groups=groups,
         musicbrainz=mb,
         discogs=discogs,
     )
 
 
-def summary_data(conn: sqlite3.Connection) -> TagQualitySummaryData:
+def summary_data(conn: sqlite3.Connection, tags_config: TagsConfig) -> TagQualitySummaryData:
     """Return headline metrics only for the ``summary`` command."""
     total_files = _get_total_ok_files(conn)
     file_album_dirs, _ = _build_file_album_dir_map(conn)
     all_file_ids = set(file_album_dirs.keys())
 
     # Field validation summary.
-    data = full_data(conn)
-    fields_with_invalid = [s.summary for s in data.field_sections if s.summary.invalid_count > 0]
+    data = full_data(conn, tags_config)
+    fields_with_invalid: list[FieldValidationRow] = []
+    for group in data.groups:
+        fields_with_invalid.extend(s.summary for s in group.fields if s.summary.invalid_count > 0)
 
     # MB summary.
     mb_tag_maps: dict[str, dict[int, str]] = {}

@@ -26,6 +26,7 @@ from storeroon.reports.models import (
     ReplayGainFullData,
     TagCoverageFullData,
     TagCoverageRow,
+    TagGroupQuality,
     TagQualityFullData,
     TechnicalFullData,
 )
@@ -669,56 +670,68 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
 # =========================================================================
 
 
-def _build_field_section(sec: Any) -> dict[str, Any]:
-    """Build a single field validation section (for tag quality report)."""
-    tables: list[dict[str, Any]] = []
-    s = sec.summary
-    inv_cls = "severity-error" if s.invalid_count > 0 else ""
+_DATE_FIELDS = frozenset({"DATE", "ORIGINALDATE"})
 
-    summary_rows: list[list[dict[str, Any]]] = [
-        [
-            _cell("Valid"),
+
+def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
+    """Build a coverage-style table for a config tag group.
+
+    Each row: Tag Key | Valid | Valid% | Invalid | Invalid% | Absent | Absent%
+    Date fields get an extra column with precision breakdown.
+    """
+    headers = [
+        _hdr("Tag Key"),
+        _hdr("Valid", "num"), _hdr("Valid %", "num"),
+        _hdr("Invalid", "num"), _hdr("Invalid %", "num"),
+        _hdr("Absent", "num"), _hdr("Absent %", "num"),
+        _hdr("Date Format"),
+    ]
+
+    rows: list[list[dict[str, Any]]] = []
+    for sec in group.fields:
+        s = sec.summary
+        inv_cls = "severity-error" if s.invalid_count > 0 else ""
+
+        # Date precision summary for date fields.
+        date_info = ""
+        if sec.field_name in _DATE_FIELDS and sec.extra.get("date_precision"):
+            parts: list[str] = []
+            for dp in sec.extra["date_precision"]:
+                if dp.precision == "invalid":
+                    continue
+                label = dp.precision.replace("_", " ")
+                parts.append(f"{label}: {fmt_pct(dp.percentage)}")
+            date_info = "<br>".join(parts)
+
+        rows.append([
+            _cell(sec.field_name, cls="mono"),
             _cell(fmt_count(s.valid_count), cls="num"),
-            _cell(fmt_pct(s.valid_pct), cls="num", bar_pct=s.valid_pct, bar_cls="bar-green"),
-        ],
-        [
-            _cell("Invalid", cls=inv_cls),
-            _cell(fmt_count(s.invalid_count), cls=f"num {inv_cls}"),
-            _cell(fmt_pct(s.invalid_pct), cls=f"num {inv_cls}", bar_pct=s.invalid_pct, bar_cls="bar-red"),
-        ],
-        [
-            _cell("Absent"),
+            _cell(fmt_pct(s.valid_pct), cls="num"),
+            _cell(fmt_count(s.invalid_count), cls=f"num {inv_cls}".strip()),
+            _cell(fmt_pct(s.invalid_pct), cls=f"num {inv_cls}".strip()),
             _cell(fmt_count(s.absent_count), cls="num"),
             _cell(fmt_pct(s.absent_pct), cls="num"),
-        ],
-    ]
-    tables.append(
-        _table("Validation Summary", [_hdr("Status"), _hdr("Count", "num"), _hdr("%", "num")], summary_rows)
-    )
+            _cell(date_info, cls="dim"),
+        ])
 
-    for extra_name, extra_rows in sec.extra.items():
-        if extra_rows:
-            ext_rows: list[list[dict[str, Any]]] = []
-            for er in extra_rows:
-                ext_rows.append([
-                    _cell(er.precision),
-                    _cell(fmt_count(er.count), cls="num"),
-                    _cell(fmt_pct(er.percentage), cls="num"),
-                ])
-            tables.append(
-                _table(extra_name.replace("_", " ").title(), [_hdr("Precision"), _hdr("Count", "num"), _hdr("%", "num")], ext_rows)
-            )
+    tables: list[dict[str, Any]] = [_table(None, headers, rows)]
 
-    if sec.invalid_values:
-        iv_rows: list[list[dict[str, Any]]] = []
-        for iv in sec.invalid_values:
-            iv_rows.append([_cell(iv.value, cls="mono"), _cell(fmt_count(iv.count), cls="num")])
-        footer = None
-        if sec.invalid_values_total > len(sec.invalid_values):
-            footer = f"Showing top {len(sec.invalid_values)} of {sec.invalid_values_total} distinct invalid values."
-        tables.append(_table("Invalid Values", [_hdr("Value"), _hdr("Count", "num")], iv_rows, footer=footer))
+    # Collect invalid values across all fields in the group.
+    for sec in group.fields:
+        if sec.invalid_values:
+            iv_rows: list[list[dict[str, Any]]] = []
+            for iv in sec.invalid_values:
+                iv_rows.append([_cell(iv.value, cls="mono"), _cell(fmt_count(iv.count), cls="num")])
+            footer = None
+            if sec.invalid_values_total > len(sec.invalid_values):
+                footer = f"Showing top {len(sec.invalid_values)} of {sec.invalid_values_total} distinct invalid values."
+            tables.append(_table(
+                f"Invalid Values — {sec.field_name}",
+                [_hdr("Value"), _hdr("Count", "num")],
+                iv_rows, footer=footer,
+            ))
 
-    return _section(f"Field: {sec.field_name}", tables=tables)
+    return _section(group.group_name, tables=tables)
 
 
 def _build_id_section(id_section: Any) -> dict[str, Any]:
@@ -803,9 +816,10 @@ def build_tag_quality_sections(data: TagQualityFullData) -> list[dict[str, Any]]
         )
     )
 
-    # Field format validation sections.
-    for sec in data.field_sections:
-        sections.append(_build_field_section(sec))
+    # Grouped field validation tables (required, recommended, other).
+    for group in data.groups:
+        if group.fields:
+            sections.append(_build_quality_group_section(group))
 
     # External ID sections (MusicBrainz, Discogs).
     sections.append(_build_id_section(data.musicbrainz))

@@ -209,7 +209,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         log.warning("Tag coverage summary failed: %s", exc)
 
     try:
-        summary.tag_quality = tag_quality.summary_data(conn)
+        summary.tag_quality = tag_quality.summary_data(conn, conf.tags)
     except Exception as exc:
         log.warning("Tag quality summary failed: %s", exc)
 
@@ -380,7 +380,7 @@ def _cmd_tag_quality(args: argparse.Namespace) -> int:
     from storeroon.reports.queries import tag_quality
     from storeroon.reports.renderers.terminal import render_tag_quality
 
-    data = tag_quality.full_data(conn, artist_filter=artist_filter)
+    data = tag_quality.full_data(conn, conf.tags, artist_filter=artist_filter)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
@@ -683,7 +683,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ("Overview", "overview", lambda: overview.full_data(conn)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
-        ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn)),
+        ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn, conf.tags)),
         ("Album consistency", "album_consistency", lambda: album_consistency.full_data(conn)),
         ("Duplicates", "duplicates", lambda: duplicates.full_data(conn)),
         ("Scan issues", "issues", lambda: issues.full_data(conn)),
