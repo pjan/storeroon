@@ -54,31 +54,27 @@ GROUP BY tag_key_upper
 ORDER BY file_count DESC
 """
 
-# Count of files where a given alias key is present (non-empty).
-_ALIAS_FILES_SQL = """
-SELECT COUNT(DISTINCT file_id) AS cnt
-FROM raw_tags
-WHERE tag_key_upper = ?
-  AND TRIM(tag_value) != ''
-  AND file_id IN (SELECT id FROM files WHERE status = 'ok')
-"""
-
-# For files that have the alias key, check if the canonical key has the
-# same value.  Returns one row per file with the alias key present.
+# For files that have either the canonical or alias key (or both),
+# return both values so we can check consistency.
+# Parameters: (canonical_key, alias_key, canonical_key, alias_key)
 _ALIAS_CONSISTENCY_SQL = """
 SELECT
-    rt_alias.file_id,
-    rt_alias.tag_value AS alias_value,
-    rt_canon.tag_value AS canonical_value
-FROM raw_tags rt_alias
+    f.id AS file_id,
+    rt_canon.tag_value AS canonical_value,
+    rt_alias.tag_value AS alias_value
+FROM files f
 LEFT JOIN raw_tags rt_canon
-    ON rt_canon.file_id = rt_alias.file_id
+    ON rt_canon.file_id = f.id
     AND rt_canon.tag_key_upper = ?
     AND rt_canon.tag_index = 0
-WHERE rt_alias.tag_key_upper = ?
-  AND rt_alias.tag_index = 0
-  AND TRIM(rt_alias.tag_value) != ''
-  AND rt_alias.file_id IN (SELECT id FROM files WHERE status = 'ok')
+    AND TRIM(rt_canon.tag_value) != ''
+LEFT JOIN raw_tags rt_alias
+    ON rt_alias.file_id = f.id
+    AND rt_alias.tag_key_upper = ?
+    AND rt_alias.tag_index = 0
+    AND TRIM(rt_alias.tag_value) != ''
+WHERE f.status = 'ok'
+  AND (rt_canon.tag_value IS NOT NULL OR rt_alias.tag_value IS NOT NULL)
 """
 
 
@@ -135,8 +131,11 @@ def _alias_usage(
     """Check value consistency for alias pairs where the canonical key
     is in the required or recommended config lists.
 
-    For each qualifying alias pair, counts files that have the alias key
-    and checks whether the canonical key is present with the same value.
+    For each qualifying alias pair, finds all files that have either key
+    (or both) and checks whether the values are consistent.  A file is
+    consistent if both keys are present with the same value, or if only
+    the canonical key is present.  A file is inconsistent if: only the
+    alias is present (canonical missing), or both are present but differ.
     A healthy collection has 100% consistency.
     """
     result: list[AliasUsageRow] = []
@@ -145,29 +144,33 @@ def _alias_usage(
         if canonical_key not in canonical_keys:
             continue
 
-        # Count files with the alias key present.
-        count_row = conn.execute(_ALIAS_FILES_SQL, (alias_key,)).fetchone()
-        files_with_alias = count_row[0] if count_row else 0
-
-        if files_with_alias == 0:
-            continue
-
-        # For each file with the alias, check canonical value.
         rows = conn.execute(
             _ALIAS_CONSISTENCY_SQL, (canonical_key, alias_key)
         ).fetchall()
 
-        files_consistent = sum(
-            1 for r in rows
-            if r["canonical_value"] is not None
-            and r["canonical_value"].strip() == r["alias_value"].strip()
-        )
+        if not rows:
+            continue
+
+        total = len(rows)
+        consistent = 0
+        for r in rows:
+            canon_val = r["canonical_value"]
+            alias_val = r["alias_value"]
+            if canon_val is not None and alias_val is None:
+                # Only canonical present — fine
+                consistent += 1
+            elif canon_val is not None and alias_val is not None:
+                # Both present — consistent if values match
+                if canon_val.strip() == alias_val.strip():
+                    consistent += 1
+            # alias_val present but canon_val is None → inconsistent
+            # both present but differ → inconsistent
 
         result.append(
             AliasUsageRow(
                 canonical_key=canonical_key,
                 alias_key=alias_key,
-                consistency_pct=safe_pct(files_consistent, files_with_alias),
+                consistency_pct=safe_pct(consistent, total),
             )
         )
     return result
