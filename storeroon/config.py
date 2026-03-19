@@ -102,33 +102,30 @@ class LoggingConfig:
 _DEFAULT_REQUIRED_TAG_FIELDS: list[str] = [
     "TITLE",
     "ARTIST",
-    "ALBUMARTIST",
     "ALBUM",
+    "ALBUMARTIST",
+    "ORIGINALDATE",
     "DATE",
+    "CATALOGNUMBER",
     "TRACKNUMBER",
+    "TRACKTOTAL",
+    "DISCNUMBER",
+    "DISCTOTAL",
+    "RELEASETYPE",
+    "RELEASESTATUS",
+    "GENRE",
+    "ACOUSTID_FINGERPRINT",
 ]
 
 _DEFAULT_RECOMMENDED_TAG_FIELDS: list[str] = [
-    "TOTALTRACKS",
-    "DISCNUMBER",
-    "TOTALDISCS",
-    "ORIGINALDATE",
-    "LABEL",
-    "CATALOGNUMBER",
     "ISRC",
-    "RELEASETYPE",
-]
-
-_DEFAULT_MUSICBRAINZ_TAG_FIELDS: list[str] = [
+    "ACOUSTID_ID",
     "MUSICBRAINZ_TRACKID",
     "MUSICBRAINZ_RELEASETRACKID",
     "MUSICBRAINZ_ALBUMID",
     "MUSICBRAINZ_ARTISTID",
     "MUSICBRAINZ_ALBUMARTISTID",
     "MUSICBRAINZ_RELEASEGROUPID",
-]
-
-_DEFAULT_DISCOGS_TAG_FIELDS: list[str] = [
     "DISCOGS_RELEASE_ID",
     "DISCOGS_ARTIST_ID",
     "DISCOGS_MASTER_ID",
@@ -172,8 +169,6 @@ _DEFAULT_STANDARD_OPTIONAL_FIELDS: list[str] = [
     "KEY",
     "LANGUAGE",
     "SCRIPT",
-    "ACOUSTID_ID",
-    "ACOUSTID_FINGERPRINT",
     "REPLAYGAIN_REFERENCE_LOUDNESS",
     "ACCURATERIPCRC",
     "ACCURATERIPCOUNT",
@@ -198,8 +193,6 @@ class TagsConfig:
 
     required: tuple[str, ...]
     recommended: tuple[str, ...]
-    musicbrainz: tuple[str, ...]
-    discogs: tuple[str, ...]
     other: tuple[str, ...]
     aliases: dict[str, str]
     standard_optional: tuple[str, ...]
@@ -219,8 +212,6 @@ class TagsConfig:
 
         req_section = raw.get("required", {})
         rec_section = raw.get("recommended", {})
-        mb_section = raw.get("musicbrainz", {})
-        discogs_section = raw.get("discogs", {})
         other_section = raw.get("other", {})
         alias_section = raw.get("aliases", {})
         stdopt_section = raw.get("standard_optional", {})
@@ -235,8 +226,6 @@ class TagsConfig:
         return cls(
             required=_fields(req_section, default=_DEFAULT_REQUIRED_TAG_FIELDS),
             recommended=_fields(rec_section, default=_DEFAULT_RECOMMENDED_TAG_FIELDS),
-            musicbrainz=_fields(mb_section, default=_DEFAULT_MUSICBRAINZ_TAG_FIELDS),
-            discogs=_fields(discogs_section, default=_DEFAULT_DISCOGS_TAG_FIELDS),
             other=_fields(other_section, default=_DEFAULT_OTHER_TAG_FIELDS),
             aliases=aliases,
             standard_optional=_fields(
@@ -246,14 +235,10 @@ class TagsConfig:
         )
 
     def all_known_keys(self) -> frozenset[str]:
-        """Return the set of all tag keys that appear in any config list
-        (required, recommended, musicbrainz, discogs, other, aliases,
-        standard_optional, strip).  All keys are upper-cased."""
+        """Return the set of all tag keys that appear in any config list."""
         keys: set[str] = set()
         keys.update(self.required)
         keys.update(self.recommended)
-        keys.update(self.musicbrainz)
-        keys.update(self.discogs)
         keys.update(self.other)
         keys.update(self.aliases.keys())
         keys.update(self.aliases.values())
@@ -264,18 +249,13 @@ class TagsConfig:
     def classify(self, key_upper: str) -> str:
         """Classify an upper-cased tag key against the config lists.
 
-        Returns one of: ``'required'``, ``'recommended'``, ``'musicbrainz'``,
-        ``'discogs'``, ``'other'``, ``'alias'``, ``'standard_optional'``,
-        ``'strip'``, or ``'unknown'``.
+        Returns one of: ``'required'``, ``'recommended'``, ``'other'``,
+        ``'alias'``, ``'standard_optional'``, ``'strip'``, or ``'unknown'``.
         """
         if key_upper in self.required:
             return "required"
         if key_upper in self.recommended:
             return "recommended"
-        if key_upper in self.musicbrainz:
-            return "musicbrainz"
-        if key_upper in self.discogs:
-            return "discogs"
         if key_upper in self.other:
             return "other"
         if key_upper in self.aliases:

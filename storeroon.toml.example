@@ -60,32 +60,40 @@ output_dir = "reports"
 [tags.required]
 # Every FLAC file MUST have these tags. Missing any of them raises a
 # "missing_required_tag" scan issue.
-fields = ["TITLE", "ARTIST", "ALBUMARTIST", "ALBUM", "DATE", "TRACKNUMBER"]
+fields = [
+    "TITLE",
+    "ARTIST",
+    "ALBUM",
+    "ALBUMARTIST",
+    "ORIGINALDATE",
+    "DATE",
+    "CATALOGNUMBER",
+    "TRACKNUMBER",
+    "TRACKTOTAL",
+    "DISCNUMBER",
+    "DISCTOTAL",
+    "RELEASETYPE",
+    "RELEASESTATUS",
+    "GENRE",
+    "ACOUSTID_FINGERPRINT"
+]
 
 [tags.recommended]
 # Highly desirable tags. Missing coverage above 20% is flagged as a
 # warning in the tag coverage report.
 fields = [
-    "TOTALTRACKS",
-    "DISCNUMBER",
-    "TOTALDISCS",
-    "ORIGINALDATE",
-    "LABEL",
-    "CATALOGNUMBER",
     "ISRC",
-    "RELEASETYPE",
-]
-
-[tags.musicbrainz]
-# MusicBrainz identifier tags. Validated as UUID v4 format in the
-# tag-formats report. Used for matching in Sprint 3.
-fields = [
+    "ACOUSTID_ID",
     "MUSICBRAINZ_TRACKID",
     "MUSICBRAINZ_RELEASETRACKID",
     "MUSICBRAINZ_ALBUMID",
     "MUSICBRAINZ_ARTISTID",
     "MUSICBRAINZ_ALBUMARTISTID",
     "MUSICBRAINZ_RELEASEGROUPID",
+    "DISCOGS_RELEASE_ID",
+    "DISCOGS_ARTIST_ID",
+    "DISCOGS_MASTER_ID",
+    "DISCOGS_LABEL_ID",
 ]
 
 [tags.other]
@@ -132,8 +140,7 @@ fields = [
     "KEY",
     "LANGUAGE",
     "SCRIPT",
-    "ACOUSTID_ID",
-    "ACOUSTID_FINGERPRINT",
+
     "REPLAYGAIN_REFERENCE_LOUDNESS",
     "ACCURATERIPCRC",
     "ACCURATERIPCOUNT",

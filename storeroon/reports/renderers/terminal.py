@@ -381,46 +381,42 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
     _section_heading(console, "Tag Coverage & Key Inventory")
     console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
 
-    # Section A: Canonical tag coverage — one table per group.
-    for group_name, group_data in [
-        ("Required Tags", data.required_coverage),
-        ("Recommended Tags", data.recommended_coverage),
-        ("MusicBrainz Tags", data.musicbrainz_coverage),
-        ("Discogs Tags", data.discogs_coverage),
-        ("Other Tracked Tags", data.other_coverage),
+    # Coverage tables — one per group.
+    for group_name, group_data, severity in [
+        ("Required Tags", data.required_coverage, "required"),
+        ("Recommended Tags", data.recommended_coverage, "recommended"),
+        ("Other Tracked Tags", data.other_coverage, ""),
     ]:
-        _subsection_heading(console, f"Section A: {group_name}")
+        _subsection_heading(console, group_name)
         table = Table(show_header=True, header_style="bold")
         table.add_column("Tag Key", style="cyan")
-        table.add_column("Present (non-empty)", justify="right")
-        table.add_column("% ", justify="right")
-        table.add_column("Present (empty)", justify="right")
-        table.add_column("% ", justify="right")
-        table.add_column("Absent", justify="right")
-        table.add_column("% ", justify="right")
+        table.add_column("Present", justify="right")
+        table.add_column("Coverage", justify="right")
+        table.add_column("Missing", justify="right")
+        table.add_column("Missing %", justify="right")
+        table.add_column("", min_width=20)
 
         for row in group_data:
-            # Severity colouring.
-            absent_style = ""
-            if "Required" in group_name and row.absent_count > 0:
-                absent_style = "bold red"
-            elif "Recommended" in group_name and row.absent_pct > 20.0:
-                absent_style = "yellow"
+            missing_style = ""
+            if severity == "required" and row.missing_count > 0:
+                missing_style = "bold red"
+            elif severity == "recommended" and row.missing_pct > 20.0:
+                missing_style = "yellow"
 
+            chart = bar_chart(row.present_pct, 100.0, width=20)
             table.add_row(
                 row.tag_key,
-                fmt_count(row.present_nonempty_count),
-                fmt_pct(row.present_nonempty_pct),
-                fmt_count(row.present_empty_count),
-                fmt_pct(row.present_empty_pct),
-                Text(fmt_count(row.absent_count), style=absent_style),
-                Text(fmt_pct(row.absent_pct), style=absent_style),
+                fmt_count(row.present_count),
+                fmt_pct(row.present_pct),
+                Text(fmt_count(row.missing_count), style=missing_style),
+                Text(fmt_pct(row.missing_pct), style=missing_style),
+                f"[green]{chart}[/green]",
             )
         console.print(table)
 
-    # Section B: Alias usage.
+    # Alias usage.
     if data.alias_usage:
-        _subsection_heading(console, "Section B: Alias Usage")
+        _subsection_heading(console, "Alias Usage")
         alias_table = Table(show_header=True, header_style="bold")
         alias_table.add_column("Canonical Key", style="cyan")
         alias_table.add_column("Alias Found")
@@ -437,8 +433,8 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
             )
         console.print(alias_table)
 
-    # Section C: Full tag key inventory.
-    _subsection_heading(console, "Section C: Full Tag Key Inventory")
+    # Full tag key inventory.
+    _subsection_heading(console, "Full Tag Key Inventory")
     inv_table = Table(show_header=True, header_style="bold")
     inv_table.add_column("Tag Key", style="cyan")
     inv_table.add_column("File Count", justify="right")
@@ -449,7 +445,6 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
         class_style = {
             "required": "bold green",
             "recommended": "green",
-            "musicbrainz": "blue",
             "other": "dim",
             "alias": "yellow",
             "standard_optional": "dim",
@@ -465,11 +460,11 @@ def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
         )
     console.print(inv_table)
 
-    # Unknown keys — filtered table.
+    # Unknown keys.
     if data.unknown_keys:
         _subsection_heading(
             console,
-            f"Section C: Unknown Keys ({len(data.unknown_keys)} found — stripping candidates)",
+            f"Unknown Keys ({len(data.unknown_keys)} found — stripping candidates)",
         )
         unk_table = Table(show_header=True, header_style="bold red")
         unk_table.add_column("Tag Key", style="red")
@@ -500,7 +495,7 @@ def render_tag_coverage_summary(console: Console, data: TagCoverageSummaryData) 
         for row in data.required_with_missing:
             console.print(
                 f"    [red]• {row.tag_key}[/red]: "
-                f"{fmt_count(row.absent_count)} absent ({fmt_pct(row.absent_pct)})"
+                f"{fmt_count(row.missing_count)} missing ({fmt_pct(row.missing_pct)})"
             )
 
     if data.recommended_high_missing:
@@ -508,7 +503,7 @@ def render_tag_coverage_summary(console: Console, data: TagCoverageSummaryData) 
         for row in data.recommended_high_missing:
             console.print(
                 f"    [yellow]• {row.tag_key}[/yellow]: "
-                f"{fmt_pct(row.absent_pct)} absent"
+                f"{fmt_pct(row.missing_pct)} missing"
             )
 
     console.print(f"  Unknown tag keys: [bold]{data.unknown_key_count}[/bold]")

@@ -510,6 +510,55 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
 # =========================================================================
 
 
+def _coverage_table_rows(
+    group_data: list[TagCoverageRow],
+    severity_threshold: str = "",
+) -> list[list[dict[str, Any]]]:
+    """Build table rows for a tag coverage group with coverage % bars.
+
+    severity_threshold: "required" colours any missing as error,
+    "recommended" colours >20% missing as warning.
+    """
+    rows: list[list[dict[str, Any]]] = []
+    for row in group_data:
+        missing_cls = ""
+        if severity_threshold == "required" and row.missing_count > 0:
+            missing_cls = "severity-error"
+        elif severity_threshold == "recommended" and row.missing_pct > 20.0:
+            missing_cls = "severity-warning"
+
+        rows.append(
+            [
+                _cell(row.tag_key, cls="mono"),
+                _cell(fmt_count(row.present_count), cls="num"),
+                _cell(
+                    fmt_pct(row.present_pct),
+                    cls="num",
+                    bar_pct=row.present_pct,
+                    bar_cls="bar-green" if row.present_pct > 0 else None,
+                ),
+                _cell(
+                    fmt_count(row.missing_count),
+                    cls=f"num {missing_cls}".strip(),
+                ),
+                _cell(
+                    fmt_pct(row.missing_pct),
+                    cls=f"num {missing_cls}".strip(),
+                ),
+            ]
+        )
+    return rows
+
+
+_COV_HEADERS = [
+    _hdr("Tag Key"),
+    _hdr("Present", "num"),
+    _hdr("Coverage", "num"),
+    _hdr("Missing", "num"),
+    _hdr("Missing %", "num"),
+]
+
+
 def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
@@ -520,47 +569,14 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
         )
     )
 
-    cov_headers = [
-        _hdr("Tag Key"),
-        _hdr("Present (non-empty)", "num"),
-        _hdr("%", "num"),
-        _hdr("Present (empty)", "num"),
-        _hdr("%", "num"),
-        _hdr("Absent", "num"),
-        _hdr("%", "num"),
-    ]
-
-    for group_name, group_data in [
-        ("Required Tags", data.required_coverage),
-        ("Recommended Tags", data.recommended_coverage),
-        ("MusicBrainz Tags", data.musicbrainz_coverage),
-        ("Discogs Tags", data.discogs_coverage),
-        ("Other Tracked Tags", data.other_coverage),
+    for group_name, group_data, severity in [
+        ("Required Tags", data.required_coverage, "required"),
+        ("Recommended Tags", data.recommended_coverage, "recommended"),
+        ("Other Tracked Tags", data.other_coverage, ""),
     ]:
-        rows: list[list[dict[str, Any]]] = []
-        for row in group_data:
-            absent_cls = ""
-            if "Required" in group_name and row.absent_count > 0:
-                absent_cls = "severity-error"
-            elif "Recommended" in group_name and row.absent_pct > 20.0:
-                absent_cls = "severity-warning"
-
-            rows.append(
-                [
-                    _cell(row.tag_key, cls="mono"),
-                    _cell(fmt_count(row.present_nonempty_count), cls="num"),
-                    _cell(fmt_pct(row.present_nonempty_pct), cls="num"),
-                    _cell(fmt_count(row.present_empty_count), cls="num"),
-                    _cell(fmt_pct(row.present_empty_pct), cls="num"),
-                    _cell(fmt_count(row.absent_count), cls=f"num {absent_cls}".strip()),
-                    _cell(fmt_pct(row.absent_pct), cls=f"num {absent_cls}".strip()),
-                ]
-            )
+        rows = _coverage_table_rows(group_data, severity)
         sections.append(
-            _section(
-                f"Section A: {group_name}",
-                tables=[_table(None, cov_headers, rows)],
-            )
+            _section(group_name, tables=[_table(None, _COV_HEADERS, rows)])
         )
 
     if data.alias_usage:
@@ -577,7 +593,7 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
             )
         sections.append(
             _section(
-                "Section B: Alias Usage",
+                "Alias Usage",
                 tables=[
                     _table(
                         None,
@@ -605,7 +621,7 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
         )
     sections.append(
         _section(
-            "Section C: Full Tag Key Inventory",
+            "Full Tag Key Inventory",
             tables=[
                 _table(
                     None,
@@ -634,7 +650,7 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
             )
         sections.append(
             _section(
-                f"Section C: Unknown Keys ({len(data.unknown_keys)} \u2014 stripping candidates)",
+                f"Unknown Keys ({len(data.unknown_keys)} \u2014 stripping candidates)",
                 note="Review these keys and add to [tags.strip] in your config to remove them in Phase 4.",
                 tables=[
                     _table(

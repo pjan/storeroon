@@ -29,12 +29,10 @@ class TagCoverageRow:
     """Coverage stats for a single tag key within a group."""
 
     tag_key: str
-    present_nonempty_count: int
-    present_nonempty_pct: float
-    present_empty_count: int
-    present_empty_pct: float
-    absent_count: int
-    absent_pct: float
+    present_count: int
+    present_pct: float
+    missing_count: int  # empty + absent combined
+    missing_pct: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +52,7 @@ class TagInventoryRow:
     tag_key_upper: str
     file_count: int
     coverage_pct: float
-    classification: str  # required / recommended / musicbrainz / other / alias / standard_optional / strip / unknown
+    classification: str  # required / recommended / other / alias / standard_optional / strip / unknown
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,8 +245,6 @@ class TagCoverageFullData:
     total_files: int
     required_coverage: list[TagCoverageRow]
     recommended_coverage: list[TagCoverageRow]
-    musicbrainz_coverage: list[TagCoverageRow]
-    discogs_coverage: list[TagCoverageRow]
     other_coverage: list[TagCoverageRow]
     alias_usage: list[AliasUsageRow]
     full_inventory: list[TagInventoryRow]
