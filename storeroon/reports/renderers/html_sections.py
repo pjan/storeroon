@@ -1140,6 +1140,8 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
         return sections
 
     # Main table: Albums with issue counts by severity
+    from urllib.parse import quote
+
     album_rows: list[list[dict[str, Any]]] = []
     for album in data.albums[:100]:
         cat_num = album.catalog_number if album.catalog_number else "-"
@@ -1147,10 +1149,11 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
         warning_str = fmt_count(album.warning_count) if album.warning_count > 0 else "-"
         info_str = fmt_count(album.info_count) if album.info_count > 0 else "-"
 
+        link = f'/report/album-issues?dir={quote(album.album_dir, safe="")}'
         album_rows.append(
             [
                 _cell(album.artist),
-                _cell(album.album),
+                _cell(f'<a href="{link}" style="color:var(--accent);text-decoration:none">{album.album}</a>'),
                 _cell(cat_num, cls="dim"),
                 _cell(error_str, cls="num severity-error"),
                 _cell(warning_str, cls="num severity-warning"),
@@ -1184,6 +1187,56 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
             ],
         )
     )
+
+    return sections
+
+
+def build_album_issues_sections(data: Any) -> list[dict[str, Any]]:
+    """Build HTML sections for a single album's issue detail page."""
+    sections: list[dict[str, Any]] = []
+
+    cat_display = data.catalog_number or ""
+    sections.append(
+        _section(
+            f"{data.artist} \u2014 {data.album}",
+            summary_cards=[
+                _card(str(data.total_files), "Files in Album"),
+                _card(str(data.files_with_issues), "Files with Issues"),
+                _card(str(data.error_count), "Errors"),
+                _card(str(data.warning_count), "Warnings"),
+                _card(str(data.info_count), "Info"),
+            ],
+            text_blocks=[
+                _text(f'<span class="dim">Directory: <code>{data.album_dir}</code></span>')
+            ] + ([_text(f'<span class="dim">Catalog #: {cat_display}</span>')] if cat_display else []),
+        )
+    )
+
+    if data.issues:
+        issue_rows: list[list[dict[str, Any]]] = []
+        for issue in data.issues:
+            sev_cls = f"severity-{issue.severity}"
+            issue_rows.append([
+                _cell(issue.severity.upper(), cls=sev_cls),
+                _cell(issue.file_name, cls="mono"),
+                _cell(issue.issue_type, cls="mono"),
+                _cell(issue.description),
+            ])
+        sections.append(
+            _section(
+                "Issues",
+                tables=[_table(None, [
+                    _hdr("Severity"),
+                    _hdr("File"),
+                    _hdr("Issue Type"),
+                    _hdr("Description"),
+                ], issue_rows)],
+            )
+        )
+    else:
+        sections.append(
+            _section("Issues", text_blocks=[_text("No issues found.", cls="dim")])
+        )
 
     return sections
 

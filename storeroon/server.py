@@ -6,9 +6,10 @@ renders them as HTML on the fly using the same Jinja2 templates and section
 builders used by the static renderer.
 
 Routes:
-    GET /                 Dashboard listing all reports
-    GET /report/<name>    Individual report rendered as HTML
-    GET /api/<name>.json  Raw JSON passthrough
+    GET /                          Dashboard listing all reports
+    GET /report/<name>             Individual report rendered as HTML
+    GET /report/album-issues?dir=  Album issue detail page (queries DB)
+    GET /api/<name>.json           Raw JSON passthrough
 """
 
 from __future__ import annotations
@@ -21,13 +22,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib import resources
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from jinja2 import Template
 
 from storeroon.reports.renderers.html_sections import (
     REPORT_TITLES,
     SECTION_BUILDERS,
+    build_album_issues_sections,
 )
 from storeroon.reports.serialization import REPORT_DATA_CLASSES, from_dict
 from storeroon.reports.utils import REPORT_NAMES, build_filter_string
@@ -86,6 +88,7 @@ class StoreroonHandler(BaseHTTPRequestHandler):
     """HTTP request handler for the storeroon report server."""
 
     json_dir: Path  # set on the class before serving
+    db_path: Path | None  # set on the class before serving
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -93,6 +96,13 @@ class StoreroonHandler(BaseHTTPRequestHandler):
 
         if path == "" or path == "/":
             self._serve_index()
+        elif path == "/report/album-issues":
+            qs = parse_qs(parsed.query)
+            dir_list = qs.get("dir", [])
+            if dir_list:
+                self._serve_album_issues(unquote(dir_list[0]))
+            else:
+                self._send_error(400, "Missing 'dir' query parameter")
         elif path.startswith("/report/"):
             self._serve_report(path[8:])
         elif path.startswith("/api/") and path.endswith(".json"):
@@ -178,6 +188,40 @@ class StoreroonHandler(BaseHTTPRequestHandler):
         )
         self._send_html(html)
 
+    def _serve_album_issues(self, album_dir: str) -> None:
+        """Render the album issue detail page by querying the database."""
+        if not self.db_path or not self.db_path.is_file():
+            self._send_error(500, "Database not available. Start the server with --config.")
+            return
+
+        try:
+            from storeroon.db import connect
+            from storeroon.reports.queries.issues import album_detail
+
+            conn = connect(self.db_path, read_only=True)
+            data = album_detail(conn, album_dir)
+            conn.close()
+        except Exception as exc:
+            self._send_error(500, f"Failed to query album issues: {exc}")
+            return
+
+        if data is None:
+            self._send_error(404, f"No issues found for album directory: {album_dir}")
+            return
+
+        sections = build_album_issues_sections(data)
+        title = f"Issues — {data.artist} — {data.album}"
+
+        template = _load_template("report.html")
+        html = template.render(
+            title=title,
+            generated_at="",
+            filters="",
+            sections=sections,
+            nav_links=_build_nav_links(""),
+        )
+        self._send_html(html)
+
     def _serve_json(self, report_name: str) -> None:
         """Serve the raw JSON file."""
         filepath = self.json_dir / f"{report_name}.json"
@@ -235,9 +279,10 @@ class StoreroonHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 
-def run_server(json_dir: Path, port: int = 8080) -> None:
+def run_server(json_dir: Path, port: int = 8080, db_path: Path | None = None) -> None:
     """Start the HTTP server and block until interrupted."""
     StoreroonHandler.json_dir = json_dir
+    StoreroonHandler.db_path = db_path
     server = HTTPServer(("127.0.0.1", port), StoreroonHandler)
     print(f"Serving storeroon reports at http://127.0.0.1:{port}/")
     print(f"JSON directory: {json_dir}")

@@ -300,16 +300,19 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     from storeroon.server import run_server
 
     json_dir: Path | None = None
+    db_path: Path | None = None
+
+    try:
+        conf = cfg.load(getattr(args, "config", None))
+        if not json_dir:
+            json_dir = conf.reports.output_dir.expanduser().resolve()
+        db_path = conf.database.path.expanduser().resolve()
+    except cfg.ConfigError as exc:
+        console.print(f"[bold red]Configuration error:[/bold red] {exc}")
+        return 1
 
     if args.json_dir:
         json_dir = Path(args.json_dir).expanduser().resolve()
-    else:
-        try:
-            conf = cfg.load(getattr(args, "config", None))
-            json_dir = conf.reports.output_dir.expanduser().resolve()
-        except cfg.ConfigError as exc:
-            console.print(f"[bold red]Configuration error:[/bold red] {exc}")
-            return 1
 
     if not json_dir.is_dir():
         console.print(
@@ -318,7 +321,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         )
         return 1
 
-    run_server(json_dir, port=args.port)
+    run_server(json_dir, port=args.port, db_path=db_path)
     return 0
 
 
