@@ -585,7 +585,8 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
                 iv_table = Table(
                     title=f"Invalid Values — {sec.field_name} "
                     f"(top {len(sec.invalid_values)} of {sec.invalid_values_total})",
-                    show_header=True, header_style="bold",
+                    show_header=True,
+                    header_style="bold",
                 )
                 iv_table.add_column("Value")
                 iv_table.add_column("Count", justify="right")
@@ -604,7 +605,8 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
         if section.partial_albums:
             pa_table = Table(
                 title=f"Partial Album Coverage ({len(section.partial_albums)} albums)",
-                show_header=True, header_style="bold",
+                show_header=True,
+                header_style="bold",
             )
             pa_table.add_column("Album Directory", style="dim", max_width=60)
             pa_table.add_column("With ID", justify="right")
@@ -613,8 +615,10 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
 
             for pa in section.partial_albums[:30]:
                 pa_table.add_row(
-                    pa.album_dir, str(pa.tracks_with_id),
-                    str(pa.tracks_without_id), str(pa.total_tracks),
+                    pa.album_dir,
+                    str(pa.tracks_with_id),
+                    str(pa.tracks_without_id),
+                    str(pa.total_tracks),
                 )
             if len(section.partial_albums) > 30:
                 console.print(
@@ -625,7 +629,8 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
         if section.duplicate_ids:
             dup_table = Table(
                 title=f"Duplicate IDs ({len(section.duplicate_ids)} found)",
-                show_header=True, header_style="bold",
+                show_header=True,
+                header_style="bold",
             )
             dup_table.add_column("ID Value", max_width=40)
             dup_table.add_column("Files", justify="right")
@@ -633,7 +638,11 @@ def render_tag_quality(console: Console, data: TagQualityFullData) -> None:
             dup_table.add_column("Paths", style="dim")
 
             for d in section.duplicate_ids[:20]:
-                same = Text("Yes", style="red") if d.same_directory else Text("No", style="yellow")
+                same = (
+                    Text("Yes", style="red")
+                    if d.same_directory
+                    else Text("No", style="yellow")
+                )
                 paths = "\n".join(d.file_paths[:5])
                 if len(d.file_paths) > 5:
                     paths += f"\n… +{len(d.file_paths) - 5} more"
@@ -877,102 +886,144 @@ def render_duplicates_summary(console: Console, data: DuplicatesSummaryData) -> 
 
 
 def render_issues(console: Console, data: IssuesFullData) -> None:
-    """Render the full scan issues report."""
-    _section_heading(console, "Scan Issues")
-    console.print(f"Total open issues: [bold]{fmt_count(data.total_open)}[/bold]")
+    """Render the full scan issues report (album-level overview)."""
+    _section_heading(console, "Scan Issues by Album")
+    console.print(f"Albums with issues: [bold]{fmt_count(data.total_albums)}[/bold]")
+    console.print(
+        f"Files with issues: [bold]{fmt_count(data.total_files_with_issues)}[/bold]"
+    )
+    console.print(f"Total issues: [bold]{fmt_count(data.total_issues)}[/bold]")
+    console.print()
 
-    if data.total_open == 0:
-        console.print("[green]No open scan issues.[/green]")
+    if data.total_albums == 0:
+        console.print("[green]No albums with scan issues.[/green]")
         return
 
-    # Table 1: Pivot (severity × issue_type).
-    if data.pivot:
-        _subsection_heading(console, "Issues by Severity and Type")
-        piv_table = Table(show_header=True, header_style="bold")
-        piv_table.add_column("Severity")
-        piv_table.add_column("Issue Type", style="cyan")
-        piv_table.add_column("Count", justify="right")
+    # Main table: Albums with issue counts by severity
+    album_table = Table(show_header=True, header_style="bold")
+    album_table.add_column("Artist", style="cyan", max_width=30)
+    album_table.add_column("Album", max_width=40)
+    album_table.add_column("Catalog #", style="dim", max_width=15)
+    album_table.add_column("ERROR", justify="right", style="red")
+    album_table.add_column("WARNING", justify="right", style="yellow")
+    album_table.add_column("INFO", justify="right", style="blue")
+    album_table.add_column("Total", justify="right", style="bold")
 
-        for row in data.pivot:
-            piv_table.add_row(
-                Text(row.severity.upper(), style=severity_style(row.severity)),
-                row.issue_type,
-                fmt_count(row.count),
-            )
-        console.print(piv_table)
+    # Show top 100 albums
+    for album in data.albums[:100]:
+        # Format catalog number
+        cat_num = album.catalog_number if album.catalog_number else "-"
 
-    # Table 2: Most-affected albums.
-    if data.by_album:
-        _subsection_heading(console, "Most-Affected Albums (top 50)")
-        album_table = Table(show_header=True, header_style="bold")
-        album_table.add_column("Album Directory", style="dim", max_width=60)
-        album_table.add_column("Issues", justify="right")
+        # Format counts (show "-" for zero)
+        error_str = fmt_count(album.error_count) if album.error_count > 0 else "-"
+        warning_str = fmt_count(album.warning_count) if album.warning_count > 0 else "-"
+        info_str = fmt_count(album.info_count) if album.info_count > 0 else "-"
 
-        for row in data.by_album[:50]:
-            album_table.add_row(row.album_dir, fmt_count(row.issue_count))
-        if len(data.by_album) > 50:
-            console.print(
-                f"[dim]  … and {len(data.by_album) - 50} more albums "
-                f"(use --output csv for full list)[/dim]"
-            )
-        console.print(album_table)
-
-    # Table 3: Most-affected artists.
-    if data.by_artist:
-        _subsection_heading(console, "Most-Affected Artists (top 20)")
-        art_table = Table(show_header=True, header_style="bold")
-        art_table.add_column("Artist")
-        art_table.add_column("Issues", justify="right")
-
-        for row in data.by_artist[:20]:
-            art_table.add_row(row.artist, fmt_count(row.issue_count))
-        if len(data.by_artist) > 20:
-            console.print(f"[dim]  … and {len(data.by_artist) - 20} more artists[/dim]")
-        console.print(art_table)
-
-    # Table 4: Per-issue-type drill-down.
-    for issue_type, detail_rows in sorted(data.by_type.items()):
-        _subsection_heading(
-            console, f"Issue Type: {issue_type} ({len(detail_rows)} issues)"
+        album_table.add_row(
+            album.artist,
+            album.album,
+            cat_num,
+            error_str,
+            warning_str,
+            info_str,
+            fmt_count(album.total_count),
         )
-        dt_table = Table(show_header=True, header_style="bold")
-        dt_table.add_column("Severity")
-        dt_table.add_column("File Path", style="dim", max_width=60)
-        dt_table.add_column("Description")
 
-        for dr in detail_rows[:30]:
-            dt_table.add_row(
-                Text(dr.severity.upper(), style=severity_style(dr.severity)),
-                dr.file_path or "(collection-wide)",
-                dr.description,
-            )
-        if len(detail_rows) > 30:
-            console.print(
-                f"[dim]  … and {len(detail_rows) - 30} more "
-                f"(use --output csv for full list)[/dim]"
-            )
-        console.print(dt_table)
+    console.print(album_table)
+
+    if len(data.albums) > 100:
+        console.print()
+        console.print(
+            f"[dim]  … and {len(data.albums) - 100} more albums "
+            f"(use --output csv/json for full list)[/dim]"
+        )
+
+    console.print()
+    console.print(
+        "[dim]Note: Use 'storeroon report album-issues <album_dir>' for detailed file-level issues[/dim]"
+    )
 
 
 def render_issues_summary(console: Console, data: IssuesSummaryData) -> None:
     """Render scan issues summary in summary mode."""
     _subsection_heading(console, "⚠  Scan Issues")
 
-    if data.total_open == 0:
-        console.print("  [green]No open scan issues.[/green]")
+    if data.total_albums_with_issues == 0:
+        console.print("  [green]No albums with scan issues.[/green]")
         return
 
-    console.print(f"  Total open: [bold]{fmt_count(data.total_open)}[/bold]")
+    console.print(
+        f"  Albums with issues: [bold]{fmt_count(data.total_albums_with_issues)}[/bold]"
+    )
+    console.print(f"  Total issues: [bold]{fmt_count(data.total_issues)}[/bold]")
+
     for sev in ("critical", "error", "warning", "info"):
         count = data.by_severity.get(sev, 0)
         if count > 0:
             console.print(
                 f"    [{severity_style(sev)}]{sev.upper()}: {fmt_count(count)}[/]"
             )
-    if data.top_issue_types:
-        console.print("  Top issue types:")
-        for t in data.top_issue_types:
-            console.print(f"    • {t.issue_type}: {fmt_count(t.count)}")
+
+    if data.top_albums:
+        console.print("  Top albums by issue count:")
+        for album in data.top_albums:
+            console.print(
+                f"    • {album.artist} - {album.album}: {fmt_count(album.total_count)}"
+            )
+
+
+def render_album_issues(console: Console, data) -> None:
+    """Render detailed issues for a specific album."""
+    from storeroon.reports.models import AlbumIssuesDetail
+
+    data: AlbumIssuesDetail
+
+    _section_heading(console, "Album Issue Details")
+
+    # Album info header
+    console.print(f"[bold cyan]Artist:[/bold cyan] {data.artist}")
+    console.print(f"[bold cyan]Album:[/bold cyan] {data.album}")
+    if data.catalog_number:
+        console.print(f"[bold cyan]Catalog Number:[/bold cyan] {data.catalog_number}")
+    console.print(f"[bold cyan]Directory:[/bold cyan] [dim]{data.album_dir}[/dim]")
+    console.print()
+
+    # Summary stats
+    console.print(f"Total files in album: [bold]{fmt_count(data.total_files)}[/bold]")
+    console.print(
+        f"Files with issues: [bold]{fmt_count(data.files_with_issues)}[/bold]"
+    )
+    console.print(
+        f"Total issues: [bold]{fmt_count(data.error_count + data.warning_count + data.info_count)}[/bold]"
+    )
+    console.print()
+
+    # Issue count by severity
+    if data.error_count > 0:
+        console.print(f"  [red]ERRORS:[/red] {fmt_count(data.error_count)}")
+    if data.warning_count > 0:
+        console.print(f"  [yellow]WARNINGS:[/yellow] {fmt_count(data.warning_count)}")
+    if data.info_count > 0:
+        console.print(f"  [blue]INFO:[/blue] {fmt_count(data.info_count)}")
+    console.print()
+
+    # Issues table
+    _subsection_heading(console, "Issues by File")
+    issue_table = Table(show_header=True, header_style="bold")
+    issue_table.add_column("Severity", width=8)
+    issue_table.add_column("File", style="dim", max_width=40)
+    issue_table.add_column("Issue Type", style="cyan", max_width=25)
+    issue_table.add_column("Description", max_width=50)
+
+    for issue in data.issues:
+        issue_table.add_row(
+            Text(issue.severity.upper(), style=severity_style(issue.severity)),
+            issue.file_name,
+            issue.issue_type,
+            issue.description,
+        )
+
+    console.print(issue_table)
 
 
 # =========================================================================

@@ -46,7 +46,9 @@ class AliasUsageRow:
 
     canonical_key: str
     alias_key: str
-    consistency_pct: float  # % of files with alias that also have canonical with same value
+    consistency_pct: (
+        float  # % of files with alias that also have canonical with same value
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,40 +487,30 @@ class DuplicatesSummaryData:
 
 
 # =========================================================================
-# Report 9 — Scan issues
+# Report 9 — Scan issues (Album-centric)
 # =========================================================================
 
 
 @dataclass(frozen=True, slots=True)
-class IssuePivotRow:
-    """Count for a (severity, issue_type) combination."""
-
-    severity: str
-    issue_type: str
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
-class AlbumIssueRow:
-    """Issues grouped by album directory."""
-
-    album_dir: str
-    issue_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class ArtistIssueRow:
-    """Issues grouped by ALBUMARTIST."""
+class AlbumIssuesSummary:
+    """Issue counts for a single album, aggregated by severity."""
 
     artist: str
-    issue_count: int
+    album: str
+    catalog_number: str | None
+    album_dir: str  # Directory path for linking
+    error_count: int
+    warning_count: int
+    info_count: int
+    total_count: int
 
 
 @dataclass(frozen=True, slots=True)
-class IssueDetailRow:
-    """A single issue with full detail."""
+class FileIssueDetail:
+    """A single issue for a specific file within an album."""
 
-    file_path: str | None
+    file_path: str
+    file_name: str
     issue_type: str
     severity: str
     description: str
@@ -526,23 +518,41 @@ class IssueDetailRow:
 
 
 @dataclass(frozen=True, slots=True)
-class IssuesFullData:
-    """Complete data for the scan issues report."""
+class AlbumIssuesDetail:
+    """Complete issue details for a single album."""
 
-    total_open: int
-    pivot: list[IssuePivotRow]
-    by_album: list[AlbumIssueRow]
-    by_artist: list[ArtistIssueRow]
-    by_type: dict[str, list[IssueDetailRow]]  # issue_type → detail rows
+    artist: str
+    album: str
+    catalog_number: str | None
+    album_dir: str
+    total_files: int
+    files_with_issues: int
+    error_count: int
+    warning_count: int
+    info_count: int
+    issues: list[
+        FileIssueDetail
+    ]  # All issues for this album, sorted by severity then file
+
+
+@dataclass(frozen=True, slots=True)
+class IssuesFullData:
+    """Complete data for the scan issues report (album-level overview)."""
+
+    total_albums: int
+    total_files_with_issues: int
+    total_issues: int
+    albums: list[AlbumIssuesSummary]  # All albums with issues, sorted by severity
 
 
 @dataclass(frozen=True, slots=True)
 class IssuesSummaryData:
     """Summary data for scan issues in the summary command."""
 
-    total_open: int
+    total_albums_with_issues: int
+    total_issues: int
     by_severity: dict[str, int]  # severity → count
-    top_issue_types: list[IssuePivotRow]  # top 5 by count
+    top_albums: list[AlbumIssuesSummary]  # top 5 albums by issue count
 
 
 # =========================================================================

@@ -62,7 +62,9 @@ REPORT_TITLES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _hdr(label: str, align: str | None = None, cls: str | None = None) -> dict[str, Any]:
+def _hdr(
+    label: str, align: str | None = None, cls: str | None = None
+) -> dict[str, Any]:
     d: dict[str, Any] = {"label": label}
     if align:
         d["align"] = align
@@ -408,9 +410,7 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
 
     if charts:
         grid_html = f'<div class="histogram-grid">{"".join(charts)}</div>'
-        sections.append(
-            _section("Distributions", text_blocks=[_text(grid_html)])
-        )
+        sections.append(_section("Distributions", text_blocks=[_text(grid_html)]))
 
     if data.duration_outliers:
         outlier_rows: list[list[dict[str, Any]]] = []
@@ -567,9 +567,7 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
         ("Other Tracked Tags", data.other_coverage, ""),
     ]:
         rows = _coverage_table_rows(group_data, severity)
-        sections.append(
-            _section(group_name, tables=[_table(None, _COV_HEADERS, rows)])
-        )
+        sections.append(_section(group_name, tables=[_table(None, _COV_HEADERS, rows)]))
 
     # Tags to strip — unknown keys shown with same coverage columns
     if data.unknown_keys:
@@ -654,13 +652,11 @@ def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any
         f'<th class="cov-col-coverage">Coverage</th>'
         f'<th class="num">Present</th>'
         f"</tr></thead>"
-        f'<tbody>{"".join(inv_table_rows)}</tbody>'
+        f"<tbody>{''.join(inv_table_rows)}</tbody>"
         f"</table>"
         f"</details>"
     )
-    sections.append(
-        _section("", text_blocks=[_text(inv_html)])
-    )
+    sections.append(_section("", text_blocks=[_text(inv_html)]))
 
     return sections
 
@@ -678,9 +674,12 @@ def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
     """
     headers = [
         _hdr("Tag Key"),
-        _hdr("Valid", "num"), _hdr("Valid %", "num"),
-        _hdr("Invalid", "num"), _hdr("Invalid %", "num"),
-        _hdr("Absent", "num"), _hdr("Absent %", "num"),
+        _hdr("Valid", "num"),
+        _hdr("Valid %", "num"),
+        _hdr("Invalid", "num"),
+        _hdr("Invalid %", "num"),
+        _hdr("Absent", "num"),
+        _hdr("Absent %", "num"),
     ]
 
     rows: list[list[dict[str, Any]]] = []
@@ -688,15 +687,17 @@ def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
         s = sec.summary
         inv_cls = "severity-error" if s.invalid_count > 0 else ""
 
-        rows.append([
-            _cell(sec.field_name, cls="mono"),
-            _cell(fmt_count(s.valid_count), cls="num"),
-            _cell(fmt_pct(s.valid_pct), cls="num"),
-            _cell(fmt_count(s.invalid_count), cls=f"num {inv_cls}".strip()),
-            _cell(fmt_pct(s.invalid_pct), cls=f"num {inv_cls}".strip()),
-            _cell(fmt_count(s.absent_count), cls="num"),
-            _cell(fmt_pct(s.absent_pct), cls="num"),
-        ])
+        rows.append(
+            [
+                _cell(sec.field_name, cls="mono"),
+                _cell(fmt_count(s.valid_count), cls="num"),
+                _cell(fmt_pct(s.valid_pct), cls="num"),
+                _cell(fmt_count(s.invalid_count), cls=f"num {inv_cls}".strip()),
+                _cell(fmt_pct(s.invalid_pct), cls=f"num {inv_cls}".strip()),
+                _cell(fmt_count(s.absent_count), cls="num"),
+                _cell(fmt_pct(s.absent_pct), cls="num"),
+            ]
+        )
 
     tables: list[dict[str, Any]] = [_table(None, headers, rows)]
 
@@ -705,15 +706,20 @@ def _build_quality_group_section(group: TagGroupQuality) -> dict[str, Any]:
         if sec.invalid_values:
             iv_rows: list[list[dict[str, Any]]] = []
             for iv in sec.invalid_values:
-                iv_rows.append([_cell(iv.value, cls="mono"), _cell(fmt_count(iv.count), cls="num")])
+                iv_rows.append(
+                    [_cell(iv.value, cls="mono"), _cell(fmt_count(iv.count), cls="num")]
+                )
             footer = None
             if sec.invalid_values_total > len(sec.invalid_values):
                 footer = f"Showing top {len(sec.invalid_values)} of {sec.invalid_values_total} distinct invalid values."
-            tables.append(_table(
-                f"Invalid Values \u2014 {sec.field_name}",
-                [_hdr("Value"), _hdr("Count", "num")],
-                iv_rows, footer=footer,
-            ))
+            tables.append(
+                _table(
+                    f"Invalid Values \u2014 {sec.field_name}",
+                    [_hdr("Value"), _hdr("Count", "num")],
+                    iv_rows,
+                    footer=footer,
+                )
+            )
 
     return _section(group.group_name, tables=tables)
 
@@ -730,17 +736,26 @@ def _build_id_extras_section(id_section: Any) -> dict[str, Any] | None:
     if id_section.partial_albums:
         pa_rows: list[list[dict[str, Any]]] = []
         for pa in id_section.partial_albums:
-            pa_rows.append([
-                _cell(pa.album_dir, cls="path"),
-                _cell(pa.tracks_with_id, cls="num"),
-                _cell(pa.tracks_without_id, cls="num"),
-                _cell(pa.total_tracks, cls="num"),
-            ])
-        tables.append(_table(
-            f"Partial Album Coverage ({len(id_section.partial_albums)} albums)",
-            [_hdr("Album Directory"), _hdr("With ID", "num"), _hdr("Without ID", "num"), _hdr("Total", "num")],
-            pa_rows,
-        ))
+            pa_rows.append(
+                [
+                    _cell(pa.album_dir, cls="path"),
+                    _cell(pa.tracks_with_id, cls="num"),
+                    _cell(pa.tracks_without_id, cls="num"),
+                    _cell(pa.total_tracks, cls="num"),
+                ]
+            )
+        tables.append(
+            _table(
+                f"Partial Album Coverage ({len(id_section.partial_albums)} albums)",
+                [
+                    _hdr("Album Directory"),
+                    _hdr("With ID", "num"),
+                    _hdr("Without ID", "num"),
+                    _hdr("Total", "num"),
+                ],
+                pa_rows,
+            )
+        )
 
     if id_section.duplicate_ids:
         dup_rows: list[list[dict[str, Any]]] = []
@@ -750,24 +765,35 @@ def _build_id_extras_section(id_section: Any) -> dict[str, Any] | None:
             paths_str = "<br>".join(d.file_paths[:10])
             if len(d.file_paths) > 10:
                 paths_str += f"<br>\u2026 +{len(d.file_paths) - 10} more"
-            dup_rows.append([
-                _cell(d.id_value, cls="mono"),
-                _cell(d.file_count, cls="num"),
-                _cell(same_text, cls=same_cls),
-                _cell(paths_str, cls="path"),
-            ])
-        tables.append(_table(
-            f"Duplicate IDs ({len(id_section.duplicate_ids)})",
-            [_hdr("ID Value"), _hdr("Files", "num"), _hdr("Same Dir?"), _hdr("Paths")],
-            dup_rows,
-        ))
+            dup_rows.append(
+                [
+                    _cell(d.id_value, cls="mono"),
+                    _cell(d.file_count, cls="num"),
+                    _cell(same_text, cls=same_cls),
+                    _cell(paths_str, cls="path"),
+                ]
+            )
+        tables.append(
+            _table(
+                f"Duplicate IDs ({len(id_section.duplicate_ids)})",
+                [
+                    _hdr("ID Value"),
+                    _hdr("Files", "num"),
+                    _hdr("Same Dir?"),
+                    _hdr("Paths"),
+                ],
+                dup_rows,
+            )
+        )
 
     if id_section.backfill:
         bf = id_section.backfill
-        text_blocks.append(_text(
-            f"<strong>Quick-win backfill:</strong> {fmt_count(bf.affected_tracks)} tracks, "
-            f"{fmt_count(bf.distinct_source_ids)} API calls needed. {bf.description}"
-        ))
+        text_blocks.append(
+            _text(
+                f"<strong>Quick-win backfill:</strong> {fmt_count(bf.affected_tracks)} tracks, "
+                f"{fmt_count(bf.distinct_source_ids)} API calls needed. {bf.description}"
+            )
+        )
 
     if not tables and not text_blocks:
         return None
@@ -794,23 +820,31 @@ def build_tag_quality_sections(data: TagQualityFullData) -> list[dict[str, Any]]
         date_rows: list[list[dict[str, Any]]] = []
         for dq in data.date_quality:
             inv_cls = "severity-error" if dq.invalid_count > 0 else ""
-            date_rows.append([
-                _cell(dq.field_name, cls="mono"),
-                _cell(fmt_count(dq.full_date_count), cls="num"),
-                _cell(fmt_count(dq.year_only_count), cls="num"),
-                _cell(fmt_count(dq.invalid_count), cls=f"num {inv_cls}".strip()),
-                _cell(fmt_count(dq.missing_count), cls="num"),
-            ])
+            date_rows.append(
+                [
+                    _cell(dq.field_name, cls="mono"),
+                    _cell(fmt_count(dq.full_date_count), cls="num"),
+                    _cell(fmt_count(dq.year_only_count), cls="num"),
+                    _cell(fmt_count(dq.invalid_count), cls=f"num {inv_cls}".strip()),
+                    _cell(fmt_count(dq.missing_count), cls="num"),
+                ]
+            )
         sections.append(
             _section(
                 "Date Format Quality",
-                tables=[_table(None, [
-                    _hdr("Tag Key"),
-                    _hdr("Full Date", "num"),
-                    _hdr("Year Only", "num"),
-                    _hdr("Invalid", "num"),
-                    _hdr("Missing", "num"),
-                ], date_rows)],
+                tables=[
+                    _table(
+                        None,
+                        [
+                            _hdr("Tag Key"),
+                            _hdr("Full Date", "num"),
+                            _hdr("Year Only", "num"),
+                            _hdr("Invalid", "num"),
+                            _hdr("Missing", "num"),
+                        ],
+                        date_rows,
+                    )
+                ],
             )
         )
 
@@ -950,8 +984,6 @@ def build_album_consistency_sections(
     return sections
 
 
-
-
 # =========================================================================
 # Report 8 — Duplicates
 # =========================================================================
@@ -1089,119 +1121,69 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
 
     sections.append(
         _section(
-            "Scan Issues",
-            summary_cards=[_card(fmt_count(data.total_open), "Open Issues")],
+            "Scan Issues by Album",
+            summary_cards=[
+                _card(fmt_count(data.total_albums), "Albums with Issues"),
+                _card(fmt_count(data.total_files_with_issues), "Files with Issues"),
+                _card(fmt_count(data.total_issues), "Total Issues"),
+            ],
         )
     )
 
-    if data.total_open == 0:
+    if data.total_albums == 0:
         sections.append(
             _section(
                 "Result",
-                text_blocks=[_text("No open scan issues.", cls="dim")],
+                text_blocks=[_text("No albums with scan issues.", cls="dim")],
             )
         )
         return sections
 
-    if data.pivot:
-        piv_rows: list[list[dict[str, Any]]] = []
-        for row in data.pivot:
-            sev_cls = f"severity-{row.severity}"
-            piv_rows.append(
-                [
-                    _cell(row.severity.upper(), cls=sev_cls),
-                    _cell(row.issue_type, cls="mono"),
-                    _cell(fmt_count(row.count), cls="num"),
-                ]
-            )
-        sections.append(
-            _section(
-                "Issues by Severity and Type",
-                tables=[
-                    _table(
-                        None,
-                        [_hdr("Severity"), _hdr("Issue Type"), _hdr("Count", "num")],
-                        piv_rows,
-                    )
-                ],
-            )
+    # Main table: Albums with issue counts by severity
+    album_rows: list[list[dict[str, Any]]] = []
+    for album in data.albums[:100]:
+        cat_num = album.catalog_number if album.catalog_number else "-"
+        error_str = fmt_count(album.error_count) if album.error_count > 0 else "-"
+        warning_str = fmt_count(album.warning_count) if album.warning_count > 0 else "-"
+        info_str = fmt_count(album.info_count) if album.info_count > 0 else "-"
+
+        album_rows.append(
+            [
+                _cell(album.artist),
+                _cell(album.album),
+                _cell(cat_num, cls="dim"),
+                _cell(error_str, cls="num severity-error"),
+                _cell(warning_str, cls="num severity-warning"),
+                _cell(info_str, cls="num severity-info"),
+                _cell(fmt_count(album.total_count), cls="num bold"),
+            ]
         )
 
-    if data.by_album:
-        album_rows: list[list[dict[str, Any]]] = []
-        for row in data.by_album[:50]:
-            album_rows.append(
-                [
-                    _cell(row.album_dir, cls="path"),
-                    _cell(fmt_count(row.issue_count), cls="num"),
-                ]
-            )
-        footer = None
-        if len(data.by_album) > 50:
-            footer = f"Showing top 50 of {len(data.by_album)} albums."
-        sections.append(
-            _section(
-                "Most-Affected Albums",
-                tables=[
-                    _table(
-                        None,
-                        [_hdr("Album Directory"), _hdr("Issues", "num")],
-                        album_rows,
-                        footer=footer,
-                    )
-                ],
-            )
-        )
+    footer = None
+    if len(data.albums) > 100:
+        footer = f"Showing top 100 of {len(data.albums)} albums with issues."
 
-    if data.by_artist:
-        art_rows: list[list[dict[str, Any]]] = []
-        for row in data.by_artist[:20]:
-            art_rows.append(
-                [
-                    _cell(row.artist),
-                    _cell(fmt_count(row.issue_count), cls="num"),
-                ]
-            )
-        footer_a = None
-        if len(data.by_artist) > 20:
-            footer_a = f"Showing top 20 of {len(data.by_artist)} artists."
-        sections.append(
-            _section(
-                "Most-Affected Artists",
-                tables=[
-                    _table(
-                        None,
-                        [_hdr("Artist"), _hdr("Issues", "num")],
-                        art_rows,
-                        footer=footer_a,
-                    )
-                ],
-            )
+    sections.append(
+        _section(
+            "Albums with Issues",
+            tables=[
+                _table(
+                    None,
+                    [
+                        _hdr("Artist"),
+                        _hdr("Album"),
+                        _hdr("Catalog #"),
+                        _hdr("ERROR", "num"),
+                        _hdr("WARNING", "num"),
+                        _hdr("INFO", "num"),
+                        _hdr("Total", "num"),
+                    ],
+                    album_rows,
+                    footer=footer,
+                )
+            ],
         )
-
-    for issue_type, detail_rows in sorted(data.by_type.items()):
-        dt_rows: list[list[dict[str, Any]]] = []
-        for dr in detail_rows:
-            sev_cls = f"severity-{dr.severity}"
-            dt_rows.append(
-                [
-                    _cell(dr.severity.upper(), cls=sev_cls),
-                    _cell(dr.file_path or "(collection-wide)", cls="path"),
-                    _cell(dr.description),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Issue Type: {issue_type} ({len(detail_rows)} issues)",
-                tables=[
-                    _table(
-                        None,
-                        [_hdr("Severity"), _hdr("File Path"), _hdr("Description")],
-                        dt_rows,
-                    )
-                ],
-            )
-        )
+    )
 
     return sections
 

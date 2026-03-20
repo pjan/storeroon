@@ -17,6 +17,7 @@ CLI structure::
     python -m storeroon report ids           [--output ...] [--output-dir PATH] [--artist ARTIST]
     python -m storeroon report duplicates    [--output ...] [--output-dir PATH]
     python -m storeroon report issues        [--output ...] [--output-dir PATH] [--min-severity ...]
+    python -m storeroon report album-issues  ALBUM_DIR [--output ...] [--output-dir PATH]
     python -m storeroon report artists       [--output ...] [--output-dir PATH]
     python -m storeroon report genres        [--output ...] [--output-dir PATH]
     python -m storeroon report lyrics        [--output ...] [--output-dir PATH] [--artist ARTIST]
@@ -498,6 +499,51 @@ def _cmd_issues(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_album_issues(args: argparse.Namespace) -> int:
+    """Execute ``report album-issues``."""
+    conf = _load_config(args)
+    if conf is None:
+        return 1
+
+    conn = _open_db(conf)
+    if conn is None:
+        return 0
+
+    if _check_empty(conn):
+        output_console.print(
+            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
+        )
+        conn.close()
+        return 0
+
+    album_dir = args.album_dir
+    if not album_dir:
+        output_console.print("[red]Error: --album-dir is required[/red]")
+        conn.close()
+        return 1
+
+    from storeroon.reports.queries import issues
+    from storeroon.reports.renderers.terminal import render_album_issues
+
+    data = issues.album_detail(conn, album_dir)
+
+    if data is None:
+        output_console.print(f"[yellow]No issues found for album: {album_dir}[/yellow]")
+        conn.close()
+        return 0
+
+    fmt = _get_output_format(args)
+
+    if fmt == "terminal":
+        render_album_issues(output_console, data)
+    else:
+        filters: dict[str, str | None] = {"album_dir": album_dir}
+        _write_json(args, conf, "album_issues", data, filters=filters)
+
+    conn.close()
+    return 0
+
+
 def _cmd_artists(args: argparse.Namespace) -> int:
     """Execute ``report artists``."""
     conf = _load_config(args)
@@ -684,10 +730,18 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
         ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn, conf.tags)),
-        ("Album consistency", "album_consistency", lambda: album_consistency.full_data(conn)),
+        (
+            "Album consistency",
+            "album_consistency",
+            lambda: album_consistency.full_data(conn),
+        ),
         ("Duplicates", "duplicates", lambda: duplicates.full_data(conn)),
         ("Scan issues", "issues", lambda: issues.full_data(conn)),
-        ("Artists", "artists", lambda: artists.full_data(conn, fuzzy_threshold=threshold)),
+        (
+            "Artists",
+            "artists",
+            lambda: artists.full_data(conn, fuzzy_threshold=threshold),
+        ),
         ("Genres", "genres", lambda: genres.full_data(conn, fuzzy_threshold=threshold)),
         ("Lyrics", "lyrics", lambda: lyrics.full_data(conn)),
         ("ReplayGain", "replaygain", lambda: replaygain.full_data(conn)),
@@ -722,6 +776,7 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "album-consistency": _cmd_album_consistency,
     "duplicates": _cmd_duplicates,
     "issues": _cmd_issues,
+    "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,
     "genres": _cmd_genres,
     "lyrics": _cmd_lyrics,
@@ -870,7 +925,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     # --- issues ---
     p_issues = report_subs.add_parser(
         "issues",
-        help="Scan issues from Phase 1 import",
+        help="Scan issues grouped by album",
     )
     _add_output_args(p_issues)
     p_issues.add_argument(
@@ -880,7 +935,19 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
         default="info",
         help="Minimum severity to include (default: info)",
     )
-    _add_config_arg(p_issues)
+
+    # --- album-issues ---
+    p_album_issues = report_subs.add_parser(
+        "album-issues",
+        help="Detailed issues for a specific album",
+    )
+    _add_output_args(p_album_issues)
+    p_album_issues.add_argument(
+        "album_dir",
+        type=str,
+        help="Album directory path (parent directory of files)",
+    )
+    _add_config_arg(p_album_issues)
 
     # --- artists ---
     p_artists = report_subs.add_parser(
