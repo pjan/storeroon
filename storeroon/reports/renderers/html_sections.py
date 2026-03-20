@@ -1121,7 +1121,7 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
 
     sections.append(
         _section(
-            "Scan Issues by Album",
+            "Scan Issues by Album (v2)",
             summary_cards=[
                 _card(fmt_count(data.total_albums), "Albums with Issues"),
                 _card(fmt_count(data.total_files_with_issues), "Files with Issues"),
