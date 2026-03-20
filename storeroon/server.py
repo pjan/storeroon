@@ -100,9 +100,12 @@ class StoreroonHandler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             dir_list = qs.get("dir", [])
             if dir_list:
-                self._serve_album_issues(unquote(dir_list[0]))
+                self._serve_album_issues(dir_list[0])
             else:
-                self._send_error(400, "Missing 'dir' query parameter")
+                self._send_error(
+                    400,
+                    "Missing 'dir' query parameter. Use: /report/album-issues?dir=ALBUM_DIR",
+                )
         elif path.startswith("/report/"):
             self._serve_report(path[8:])
         elif path.startswith("/api/") and path.endswith(".json"):
@@ -122,21 +125,25 @@ class StoreroonHandler(BaseHTTPRequestHandler):
                     album=filters_raw.get("album"),
                     min_severity=filters_raw.get("min_severity"),
                 )
-                reports.append({
-                    "name": name,
-                    "title": REPORT_TITLES.get(name, name),
-                    "available": True,
-                    "generated_at": envelope.get("generated_at", ""),
-                    "filters_display": filters_display or "",
-                })
+                reports.append(
+                    {
+                        "name": name,
+                        "title": REPORT_TITLES.get(name, name),
+                        "available": True,
+                        "generated_at": envelope.get("generated_at", ""),
+                        "filters_display": filters_display or "",
+                    }
+                )
             else:
-                reports.append({
-                    "name": name,
-                    "title": REPORT_TITLES.get(name, name),
-                    "available": False,
-                    "generated_at": None,
-                    "filters_display": "",
-                })
+                reports.append(
+                    {
+                        "name": name,
+                        "title": REPORT_TITLES.get(name, name),
+                        "available": False,
+                        "generated_at": None,
+                        "filters_display": "",
+                    }
+                )
 
         template = _load_template("index.html")
         html = template.render(
@@ -191,7 +198,9 @@ class StoreroonHandler(BaseHTTPRequestHandler):
     def _serve_album_issues(self, album_dir: str) -> None:
         """Render the album issue detail page by querying the database."""
         if not self.db_path or not self.db_path.is_file():
-            self._send_error(500, "Database not available. Start the server with --config.")
+            self._send_error(
+                500, "Database not available. Start the server with --config."
+            )
             return
 
         try:

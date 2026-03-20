@@ -1149,11 +1149,11 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
         warning_str = fmt_count(album.warning_count) if album.warning_count > 0 else "-"
         info_str = fmt_count(album.info_count) if album.info_count > 0 else "-"
 
-        link = f'/report/album-issues?dir={quote(album.album_dir, safe="")}'
+        encoded_dir = quote(album.album_dir, safe="")
         album_rows.append(
             [
-                _cell(album.artist),
-                _cell(f'<a href="{link}" style="color:var(--accent);text-decoration:none">{album.album}</a>'),
+                _cell(f'<a href="/report/album-issues?dir={encoded_dir}" style="color:var(--accent)">{album.artist}</a>'),
+                _cell(f'<a href="/report/album-issues?dir={encoded_dir}" style="color:var(--accent)">{album.album}</a>'),
                 _cell(cat_num, cls="dim"),
                 _cell(error_str, cls="num severity-error"),
                 _cell(warning_str, cls="num severity-warning"),
