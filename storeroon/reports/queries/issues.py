@@ -21,12 +21,17 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 
+import json
+
 from storeroon.reports.models import (
     AlbumIssuesDetail,
     AlbumIssuesSummary,
+    AlbumReportData,
     FileIssueDetail,
     IssuesFullData,
     IssuesSummaryData,
+    TrackDetail,
+    TrackIssue,
 )
 from storeroon.reports.utils import severity_at_least, severity_order
 
@@ -352,4 +357,198 @@ def summary_data(conn: sqlite3.Connection) -> IssuesSummaryData:
         total_issues=len(all_issues),
         by_severity=by_severity,
         top_albums=top_albums,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Album report (rich detail page)
+# ---------------------------------------------------------------------------
+
+_ALBUM_FILES_SQL = """
+SELECT
+    f.id AS file_id,
+    f.path,
+    f.filename,
+    COALESCE(t_dn.tag_value, '1') AS discnumber,
+    COALESCE(t_tn.tag_value, '0') AS tracknumber,
+    COALESCE(t_title.tag_value, f.filename) AS title,
+    t_aa.tag_value AS albumartist,
+    t_al.tag_value AS album,
+    t_od.tag_value AS originaldate,
+    t_cn.tag_value AS catalognumber
+FROM files f
+LEFT JOIN raw_tags t_dn ON t_dn.file_id = f.id AND t_dn.tag_key_upper = 'DISCNUMBER' AND t_dn.tag_index = 0
+LEFT JOIN raw_tags t_tn ON t_tn.file_id = f.id AND t_tn.tag_key_upper = 'TRACKNUMBER' AND t_tn.tag_index = 0
+LEFT JOIN raw_tags t_title ON t_title.file_id = f.id AND t_title.tag_key_upper = 'TITLE' AND t_title.tag_index = 0
+LEFT JOIN raw_tags t_aa ON t_aa.file_id = f.id AND t_aa.tag_key_upper = 'ALBUMARTIST' AND t_aa.tag_index = 0
+LEFT JOIN raw_tags t_al ON t_al.file_id = f.id AND t_al.tag_key_upper = 'ALBUM' AND t_al.tag_index = 0
+LEFT JOIN raw_tags t_od ON t_od.file_id = f.id AND t_od.tag_key_upper = 'ORIGINALDATE' AND t_od.tag_index = 0
+LEFT JOIN raw_tags t_cn ON t_cn.file_id = f.id AND t_cn.tag_key_upper = 'CATALOGNUMBER' AND t_cn.tag_index = 0
+WHERE f.status = 'ok'
+  AND SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) = ?
+ORDER BY CAST(t_dn.tag_value AS INTEGER), CAST(t_tn.tag_value AS INTEGER)
+"""
+
+_ALBUM_ISSUES_SQL = """
+SELECT
+    si.file_id,
+    si.issue_type,
+    si.severity,
+    si.description,
+    si.details
+FROM scan_issues si
+WHERE si.resolved = 0
+  AND si.file_id IN (
+      SELECT f.id FROM files f
+      WHERE SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) = ?
+  )
+ORDER BY si.file_id, si.severity, si.issue_type
+"""
+
+_SEVERITY_WEIGHT = {"critical": 10, "error": 5, "warning": 2, "info": 0.5}
+
+_BLOCKER_TYPES = frozenset({"file_unreadable", "tag_read_error"})
+_OPTIMIZATION_TYPES = frozenset({"no_audio_md5", "missing_other_tag", "invalid_other_tag"})
+
+
+def _classify_bucket(issue_type: str) -> str:
+    """Classify an issue into a UI bucket."""
+    if issue_type in _BLOCKER_TYPES:
+        return "blocker"
+    if issue_type in _OPTIMIZATION_TYPES:
+        return "optimization"
+    return "metadata"
+
+
+def _extract_field(issue_type: str, details_json: str | None) -> str | None:
+    """Extract the tag field name from issue details, if applicable."""
+    if details_json:
+        try:
+            d = json.loads(details_json)
+            return d.get("tag")
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return None
+
+
+def _parse_int(value: str, default: int = 0) -> int:
+    """Parse a string to int, returning default on failure."""
+    try:
+        return int(value.strip().split("/")[0])  # handle legacy N/T format
+    except (ValueError, AttributeError):
+        return default
+
+
+def album_report(
+    conn: sqlite3.Connection,
+    album_dir: str,
+) -> AlbumReportData | None:
+    """Return rich album report data for the detail page.
+
+    Returns None if the album directory has no files.
+    """
+    # Fetch all files in this album
+    file_rows = conn.execute(_ALBUM_FILES_SQL, (album_dir,)).fetchall()
+    if not file_rows:
+        return None
+
+    # Album metadata from first file
+    first = file_rows[0]
+    artist = first["albumartist"] or "Unknown Artist"
+    album = first["album"] or "Unknown Album"
+    original_date = first["originaldate"]
+    catalog_number = first["catalognumber"]
+    total_tracks = len(file_rows)
+
+    # Build file_id → file info map
+    file_map: dict[int, dict] = {}
+    for r in file_rows:
+        file_map[r["file_id"]] = {
+            "file_id": r["file_id"],
+            "path": r["path"],
+            "filename": r["filename"],
+            "discnumber": _parse_int(r["discnumber"], 1),
+            "tracknumber": _parse_int(r["tracknumber"], 0),
+            "title": r["title"] or r["filename"],
+        }
+
+    # Fetch all issues for this album
+    issue_rows = conn.execute(_ALBUM_ISSUES_SQL, (album_dir,)).fetchall()
+
+    # Group issues by file_id
+    issues_by_file: dict[int, list[TrackIssue]] = defaultdict(list)
+    album_level_issues: list[str] = []
+    critical_count = 0
+    error_count = 0
+    warning_count = 0
+    info_count = 0
+
+    for ir in issue_rows:
+        sev = ir["severity"]
+        if sev == "critical":
+            critical_count += 1
+        elif sev == "error":
+            error_count += 1
+        elif sev == "warning":
+            warning_count += 1
+        else:
+            info_count += 1
+
+        fid = ir["file_id"]
+        ti = TrackIssue(
+            issue_type=ir["issue_type"],
+            severity=sev,
+            description=ir["description"],
+            field=_extract_field(ir["issue_type"], ir["details"]),
+            bucket=_classify_bucket(ir["issue_type"]),
+        )
+
+        if fid and fid in file_map:
+            issues_by_file[fid].append(ti)
+        else:
+            album_level_issues.append(ir["description"])
+
+    # Build track details
+    tracks: list[TrackDetail] = []
+    for fid, finfo in file_map.items():
+        tracks.append(TrackDetail(
+            file_id=fid,
+            file_path=finfo["path"],
+            file_name=finfo["filename"],
+            discnumber=finfo["discnumber"],
+            tracknumber=finfo["tracknumber"],
+            title=finfo["title"],
+            issues=issues_by_file.get(fid, []),
+        ))
+
+    tracks.sort(key=lambda t: (t.discnumber, t.tracknumber))
+
+    # Health score: 100 minus weighted penalties, clamped to 0-100
+    total_issues = critical_count + error_count + warning_count + info_count
+    if total_tracks == 0:
+        health = 0
+    else:
+        penalty = (
+            critical_count * _SEVERITY_WEIGHT["critical"]
+            + error_count * _SEVERITY_WEIGHT["error"]
+            + warning_count * _SEVERITY_WEIGHT["warning"]
+            + info_count * _SEVERITY_WEIGHT["info"]
+        )
+        # Normalize: max penalty per track is ~10 (critical), so divide by track count
+        health = max(0, min(100, round(100 - (penalty / total_tracks) * 10)))
+
+    return AlbumReportData(
+        artist=artist,
+        album=album,
+        original_date=original_date,
+        catalog_number=catalog_number,
+        album_dir=album_dir,
+        total_tracks=total_tracks,
+        health_score=health,
+        critical_count=critical_count,
+        error_count=error_count,
+        warning_count=warning_count,
+        info_count=info_count,
+        album_level_issues=album_level_issues,
+        tracks=tracks,
     )

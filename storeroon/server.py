@@ -29,7 +29,6 @@ from jinja2 import Template
 from storeroon.reports.renderers.html_sections import (
     REPORT_TITLES,
     SECTION_BUILDERS,
-    build_album_issues_sections,
 )
 from storeroon.reports.serialization import REPORT_DATA_CLASSES, from_dict
 from storeroon.reports.utils import REPORT_NAMES, build_filter_string
@@ -42,7 +41,7 @@ log = logging.getLogger("storeroon.server")
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=4)
 def _load_template(name: str) -> Template:
     """Load a Jinja2 template from the package resources."""
     ref = resources.files("storeroon.reports.templates").joinpath(name)
@@ -205,29 +204,60 @@ class StoreroonHandler(BaseHTTPRequestHandler):
 
         try:
             from storeroon.db import connect
-            from storeroon.reports.queries.issues import album_detail
+            from storeroon.reports.queries.issues import album_report
 
             conn = connect(self.db_path, read_only=True)
-            data = album_detail(conn, album_dir)
+            data = album_report(conn, album_dir)
             conn.close()
         except Exception as exc:
             self._send_error(500, f"Failed to query album issues: {exc}")
             return
 
         if data is None:
-            self._send_error(404, f"No issues found for album directory: {album_dir}")
+            self._send_error(404, f"No files found for album directory: {album_dir}")
             return
 
-        sections = build_album_issues_sections(data)
-        title = f"Issues — {data.artist} — {data.album}"
+        title = f"{data.artist} — {data.album}"
 
-        template = _load_template("report.html")
+        # Health score ring calculations
+        import math
+        circumference = 2 * math.pi * 52  # r=52 from the SVG
+        dash_offset = circumference * (1 - data.health_score / 100)
+        if data.health_score >= 80:
+            health_color = "var(--clean)"
+        elif data.health_score >= 50:
+            health_color = "var(--warning)"
+        else:
+            health_color = "var(--critical)"
+
+        # Helper functions for the template
+        _SEV_ORDER = {"critical": 0, "error": 1, "warning": 2, "info": 3}
+
+        def track_severity_class(track: Any) -> str:
+            if not track.issues:
+                return "sev-clean"
+            worst = min(track.issues, key=lambda i: _SEV_ORDER.get(i.severity, 9))
+            return f"sev-{worst.severity}"
+
+        def track_badge_counts(track: Any) -> list[tuple[str, int]]:
+            counts: dict[str, int] = {}
+            for issue in track.issues:
+                counts[issue.severity] = counts.get(issue.severity, 0) + 1
+            result = []
+            for sev in ("critical", "error", "warning", "info"):
+                if counts.get(sev, 0) > 0:
+                    result.append((sev, counts[sev]))
+            return result
+
+        template = _load_template("album_report.html")
         html = template.render(
             title=title,
-            generated_at="",
-            filters="",
-            sections=sections,
-            nav_links=_build_nav_links(""),
+            data=data,
+            circumference=f"{circumference:.1f}",
+            dash_offset=f"{dash_offset:.1f}",
+            health_color=health_color,
+            track_severity_class=track_severity_class,
+            track_badge_counts=track_badge_counts,
         )
         self._send_html(html)
 

@@ -536,6 +536,49 @@ class AlbumIssuesDetail:
 
 
 @dataclass(frozen=True, slots=True)
+class TrackIssue:
+    """A single issue on a track, with bucket classification."""
+
+    issue_type: str
+    severity: str  # critical, error, warning, info
+    description: str
+    field: str | None  # tag field name if applicable
+    bucket: str  # "blocker", "metadata", "optimization"
+
+
+@dataclass(frozen=True, slots=True)
+class TrackDetail:
+    """A single track with its issues."""
+
+    file_id: int
+    file_path: str
+    file_name: str
+    discnumber: int
+    tracknumber: int
+    title: str
+    issues: list[TrackIssue]
+
+
+@dataclass(frozen=True, slots=True)
+class AlbumReportData:
+    """Complete data for the album detail report page."""
+
+    artist: str
+    album: str
+    original_date: str | None
+    catalog_number: str | None
+    album_dir: str
+    total_tracks: int
+    health_score: int  # 0-100
+    critical_count: int
+    error_count: int
+    warning_count: int
+    info_count: int
+    album_level_issues: list[str]  # issues not tied to a specific track
+    tracks: list[TrackDetail]
+
+
+@dataclass(frozen=True, slots=True)
 class IssuesFullData:
     """Complete data for the scan issues report (album-level overview)."""
 
