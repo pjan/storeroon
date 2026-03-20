@@ -26,6 +26,15 @@ from typing import Sequence
 from mutagen.flac import FLAC, FLACNoHeaderError
 from mutagen.flac import error as FLACError
 
+from storeroon.config import TagsConfig
+from storeroon.reports.utils import (
+    RE_POSITIVE_INT,
+    RE_TRACKNUMBER_LEGACY,
+    is_valid_date,
+    is_valid_discogs_id,
+    is_valid_isrc,
+    is_valid_uuid,
+)
 from storeroon.scanner.walker import DiscoveredFile
 
 log = logging.getLogger(__name__)
@@ -116,11 +125,81 @@ def _try_raw_bytes_hex(value: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Tag validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_tag_value(tag_key_upper: str, value: str) -> bool:
+    """Validate a tag value based on its expected format.
+
+    Returns True if valid, False if invalid, or True if no validator exists
+    for this tag (meaning we don't validate it).
+    """
+    if not value or not value.strip():
+        return False  # Empty values are invalid
+
+    # Date tags
+    if tag_key_upper in ("DATE", "ORIGINALDATE"):
+        return is_valid_date(value)
+
+    # Track number (positive int or legacy format)
+    if tag_key_upper == "TRACKNUMBER":
+        v = value.strip()
+        if RE_TRACKNUMBER_LEGACY.match(v):
+            m = RE_TRACKNUMBER_LEGACY.match(v)
+            return m is not None and int(m.group(1)) > 0
+        if RE_POSITIVE_INT.match(v):
+            return int(v) > 0
+        return False
+
+    # Positive integers
+    if tag_key_upper in ("TRACKTOTAL", "DISCNUMBER", "DISCTOTAL", "TOTALDISCS"):
+        v = value.strip()
+        if not RE_POSITIVE_INT.match(v):
+            return False
+        return int(v) > 0
+
+    # ISRC
+    if tag_key_upper == "ISRC":
+        v = value.strip()
+        if not is_valid_isrc(v):
+            return False
+        # Check for placeholder ISRCs (ending in 00000)
+        clean = v.replace("-", "")
+        if len(clean) == 12 and clean[-5:] == "00000":
+            return False
+        return True
+
+    # MusicBrainz UUIDs
+    if tag_key_upper in (
+        "MUSICBRAINZ_TRACKID",
+        "MUSICBRAINZ_RELEASETRACKID",
+        "MUSICBRAINZ_ALBUMID",
+        "MUSICBRAINZ_ARTISTID",
+        "MUSICBRAINZ_ALBUMARTISTID",
+        "MUSICBRAINZ_RELEASEGROUPID",
+    ):
+        return is_valid_uuid(value)
+
+    # Discogs IDs
+    if tag_key_upper in (
+        "DISCOGS_RELEASE_ID",
+        "DISCOGS_ARTIST_ID",
+        "DISCOGS_MASTER_ID",
+        "DISCOGS_LABEL_ID",
+    ):
+        return is_valid_discogs_id(value)
+
+    # No validator for this tag - consider it valid
+    return True
+
+
+# ---------------------------------------------------------------------------
 # FLAC reading
 # ---------------------------------------------------------------------------
 
 
-def _read_flac(filepath: Path, required_tags: Sequence[str]) -> _FlacData:
+def _read_flac(filepath: Path, tags_config: TagsConfig) -> _FlacData:
     """Read STREAMINFO and Vorbis comments from a FLAC file.
 
     Returns a ``_FlacData`` bundle with properties, tags, and any issues
@@ -211,7 +290,7 @@ def _read_flac(filepath: Path, required_tags: Sequence[str]) -> _FlacData:
             )
         )
         # Every required tag is missing.
-        for tag_name in required_tags:
+        for tag_name in tags_config.required:
             data.issues.append(
                 _IssueRecord(
                     issue_type="missing_required_tag",
@@ -224,6 +303,15 @@ def _read_flac(filepath: Path, required_tags: Sequence[str]) -> _FlacData:
 
     # Track how many values we've seen for each key (for tag_index).
     key_counter: Counter[str] = Counter()
+    # Track which keys have at least one non-empty, valid value per category
+    valid_required_keys: set[str] = set()
+    valid_recommended_keys: set[str] = set()
+    valid_other_keys: set[str] = set()
+
+    # Convert config lists to sets for faster lookup
+    required_set = set(tags_config.required)
+    recommended_set = set(tags_config.recommended)
+    other_set = set(tags_config.other)
 
     for tag_key, tag_value in tag_pairs:
         key_upper = tag_key.upper()
@@ -249,32 +337,111 @@ def _read_flac(filepath: Path, required_tags: Sequence[str]) -> _FlacData:
                 _IssueRecord(
                     issue_type="tag_encoding_suspect",
                     severity="warning",
-                    description=f"Suspect encoding in tag {tag_key!r}",
+                    description=f"Suspect encoding in tag {key_upper!r}",
                     details=json.dumps(
-                        {"tag": tag_key, "value_preview": tag_value[:200]}
+                        {"tag": key_upper, "value_preview": tag_value[:200]}
                     ),
                 )
             )
 
-        if tag_value.strip() == "":
-            data.issues.append(
-                _IssueRecord(
-                    issue_type="empty_tag_value",
-                    severity="warning",
-                    description=f"Empty value for tag {tag_key!r}",
-                    details=json.dumps({"tag": tag_key, "tag_index": idx}),
-                )
-            )
+        # Check if tag is empty
+        is_empty = tag_value.strip() == ""
 
-    # -- Required tag checks ----------------------------------------------
-    present_keys = set(key_counter.keys())
-    for tag_name in required_tags:
-        if tag_name not in present_keys:
+        # Validate tag value format
+        is_valid = _validate_tag_value(key_upper, tag_value) if not is_empty else False
+
+        # Categorize and track based on config
+        if key_upper in required_set:
+            if not is_empty and is_valid:
+                valid_required_keys.add(key_upper)
+            elif not is_empty and not is_valid:
+                # Invalid format for required tag
+                data.issues.append(
+                    _IssueRecord(
+                        issue_type="invalid_required_tag",
+                        severity="error",
+                        description=f"Invalid format for required tag {key_upper!r}",
+                        details=json.dumps(
+                            {
+                                "tag": key_upper,
+                                "value": tag_value[:100],
+                                "tag_index": idx,
+                            }
+                        ),
+                    )
+                )
+        elif key_upper in recommended_set:
+            if not is_empty and is_valid:
+                valid_recommended_keys.add(key_upper)
+            elif not is_empty and not is_valid:
+                # Invalid format for recommended tag
+                data.issues.append(
+                    _IssueRecord(
+                        issue_type="invalid_recommended_tag",
+                        severity="warning",
+                        description=f"Invalid format for recommended tag {key_upper!r}",
+                        details=json.dumps(
+                            {
+                                "tag": key_upper,
+                                "value": tag_value[:100],
+                                "tag_index": idx,
+                            }
+                        ),
+                    )
+                )
+        elif key_upper in other_set:
+            if not is_empty and is_valid:
+                valid_other_keys.add(key_upper)
+            elif not is_empty and not is_valid:
+                # Invalid format for other tracked tag
+                data.issues.append(
+                    _IssueRecord(
+                        issue_type="invalid_other_tag",
+                        severity="info",
+                        description=f"Invalid format for tracked tag {key_upper!r}",
+                        details=json.dumps(
+                            {
+                                "tag": key_upper,
+                                "value": tag_value[:100],
+                                "tag_index": idx,
+                            }
+                        ),
+                    )
+                )
+
+    # -- Missing tag checks by category -----------------------------------
+    # Required tags
+    for tag_name in tags_config.required:
+        if tag_name not in valid_required_keys:
             data.issues.append(
                 _IssueRecord(
                     issue_type="missing_required_tag",
                     severity="error",
                     description=f"Required tag missing: {tag_name}",
+                    details=json.dumps({"tag": tag_name}),
+                )
+            )
+
+    # Recommended tags
+    for tag_name in tags_config.recommended:
+        if tag_name not in valid_recommended_keys:
+            data.issues.append(
+                _IssueRecord(
+                    issue_type="missing_recommended_tag",
+                    severity="warning",
+                    description=f"Recommended tag missing: {tag_name}",
+                    details=json.dumps({"tag": tag_name}),
+                )
+            )
+
+    # Other tracked tags
+    for tag_name in tags_config.other:
+        if tag_name not in valid_other_keys:
+            data.issues.append(
+                _IssueRecord(
+                    issue_type="missing_other_tag",
+                    severity="info",
+                    description=f"Tracked tag missing: {tag_name}",
                     details=json.dumps({"tag": tag_name}),
                 )
             )
@@ -402,7 +569,7 @@ def _insert_file_record(
 def import_file(
     conn: sqlite3.Connection,
     discovered: DiscoveredFile,
-    required_tags: Sequence[str],
+    tags_config: TagsConfig,
     *,
     dry_run: bool = False,
 ) -> tuple[bool, _FlacData]:
@@ -414,8 +581,8 @@ def import_file(
         An open SQLite connection with an active transaction.
     discovered:
         A :class:`DiscoveredFile` from the walker.
-    required_tags:
-        Upper-cased tag names that every file must have.
+    tags_config:
+        Tag schema configuration with required/recommended/other tag lists.
     dry_run:
         When *True*, read and analyse the file but don't write to the DB.
 
@@ -431,7 +598,7 @@ def import_file(
         log.debug("File already in database, skipping: %s", discovered.relative_path)
         return False, _FlacData()
 
-    data = _read_flac(discovered.path, required_tags)
+    data = _read_flac(discovered.path, tags_config)
 
     if dry_run:
         return False, data
@@ -443,9 +610,10 @@ def import_file(
 def import_batch(
     conn: sqlite3.Connection,
     files: Sequence[DiscoveredFile],
-    required_tags: Sequence[str],
+    tags_config: TagsConfig,
     *,
     dry_run: bool = False,
+    skip_existing_check: bool = False,
 ) -> ImportStats:
     """Import a batch of FLAC files inside a single transaction.
 
@@ -456,10 +624,13 @@ def import_batch(
         connection lifecycle; this function manages its own transaction.
     files:
         FLAC files discovered by the walker.
-    required_tags:
-        Upper-cased tag names that every file must have.
+    tags_config:
+        Tag schema configuration with required/recommended/other tag lists.
     dry_run:
         When *True*, analyse files but do not write anything to the database.
+    skip_existing_check:
+        When *True*, skip the database check for existing files. Useful for
+        rescans where all data has been cleared.
 
     Returns
     -------
@@ -472,13 +643,16 @@ def import_batch(
         stats.files_processed += 1
 
         # Skip check before reading the file (cheap DB lookup).
-        existing = conn.execute(_FILE_EXISTS, (discovered.relative_path,)).fetchone()
-        if existing is not None:
-            stats.files_skipped_existing += 1
-            log.debug("Already imported, skipping: %s", discovered.relative_path)
-            continue
+        if not skip_existing_check:
+            existing = conn.execute(
+                _FILE_EXISTS, (discovered.relative_path,)
+            ).fetchone()
+            if existing is not None:
+                stats.files_skipped_existing += 1
+                log.debug("Already imported, skipping: %s", discovered.relative_path)
+                continue
 
-        data = _read_flac(discovered.path, required_tags)
+        data = _read_flac(discovered.path, tags_config)
 
         is_unreadable = any(i.issue_type == "file_unreadable" for i in data.issues)
         if is_unreadable:

@@ -48,33 +48,18 @@ class DatabaseConfig:
         return cls(path=Path(path_str).expanduser())
 
 
-_DEFAULT_REQUIRED_TAGS: list[str] = [
-    "TITLE",
-    "ARTIST",
-    "ALBUMARTIST",
-    "ALBUM",
-    "DATE",
-    "TRACKNUMBER",
-]
-
-
 @dataclass(frozen=True, slots=True)
 class ScanConfig:
-    required_tags: tuple[str, ...]
     checksums: bool
     batch_size: int
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ScanConfig:
-        required = raw.get("required_tags", _DEFAULT_REQUIRED_TAGS)
-        # Normalise to upper-case so comparisons are always case-insensitive.
-        required_upper = tuple(t.upper() for t in required)
         checksums = bool(raw.get("checksums", True))
         batch_size = int(raw.get("batch_size", 500))
         if batch_size < 1:
             raise ConfigError("[scan] batch_size must be >= 1")
         return cls(
-            required_tags=required_upper,
             checksums=checksums,
             batch_size=batch_size,
         )

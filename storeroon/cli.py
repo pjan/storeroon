@@ -2,8 +2,8 @@
 Rich CLI for storeroon.
 
 Entry points:
-    python -m storeroon scan --root /path/to/collection [--dry-run]
-    python -m storeroon scan --config storeroon.toml [--dry-run]
+    python -m storeroon scan --root /path/to/collection [--dry-run] [--rescan]
+    python -m storeroon scan --config storeroon.toml [--dry-run] [--rescan]
     python -m storeroon report summary
     python -m storeroon report overview [--output terminal|json]
     python -m storeroon report all [--output-dir PATH]
@@ -152,6 +152,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         return 1
 
     dry_run: bool = args.dry_run
+    rescan: bool = args.rescan
 
     console.print(f"[bold]Collection root:[/bold] {collection_root}")
     console.print(f"[bold]Database:[/bold]        {conf.database.path}")
@@ -159,6 +160,10 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     console.print(f"[bold]Batch size:[/bold]      {conf.scan.batch_size}")
     if dry_run:
         console.print("[bold yellow]DRY RUN — no database writes[/bold yellow]")
+    if rescan:
+        console.print(
+            "[bold yellow]RESCAN MODE — clearing all existing data[/bold yellow]"
+        )
     console.print()
 
     # --- Database setup ---------------------------------------------------
@@ -184,6 +189,22 @@ def _cmd_scan(args: argparse.Namespace) -> int:
                 )
         except MigrationError as exc:
             console.print(f"[bold red]Migration error:[/bold red] {exc}")
+            conn.close()
+            return 1
+
+    # --- Clear existing data for rescan ----------------------------------
+    if rescan and not dry_run:
+        console.print("[bold cyan]Clearing existing data...[/bold cyan]")
+        try:
+            deleted_files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            conn.execute("DELETE FROM files")
+            conn.commit()
+            console.print(
+                f"[green]Cleared {deleted_files:,} file(s) and all related data[/green]"
+            )
+            console.print()
+        except Exception as exc:
+            console.print(f"[bold red]Error clearing data:[/bold red] {exc}")
             conn.close()
             return 1
 
@@ -231,8 +252,9 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             batch_stats = import_batch(
                 conn,
                 batch,
-                conf.scan.required_tags,
+                conf.tags,
                 dry_run=dry_run,
+                skip_existing_check=rescan,
             )
 
             total_stats.files_processed += batch_stats.files_processed
@@ -334,6 +356,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Analyse files without writing to the database",
+    )
+    scan_parser.add_argument(
+        "--rescan",
+        action="store_true",
+        default=False,
+        help="Clear all existing data and perform a full rescan",
     )
 
     # --- report -----------------------------------------------------------

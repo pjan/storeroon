@@ -11,17 +11,6 @@ root = "/path/to/your/music"
 path = "data/storeroon.db"
 
 [scan]
-# Required Vorbis comment tags — files missing any of these raise a
-# "missing_required_tag" scan issue.
-required_tags = [
-    "TITLE",
-    "ARTIST",
-    "ALBUMARTIST",
-    "ALBUM",
-    "DATE",
-    "TRACKNUMBER",
-]
-
 # SHA-256 checksum calculation during scanning. Disabling speeds up scans
 # but prevents duplicate detection and integrity verification.
 checksums = true
