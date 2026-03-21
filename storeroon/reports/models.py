@@ -880,8 +880,6 @@ class MasterSummary:
     overview: OverviewSummaryData | None = None
     technical: TechnicalSummaryData | None = None
     tags: TagCoverageSummaryData | None = None
-    tag_quality: TagQualitySummaryData | None = None
-    album_consistency: AlbumConsistencySummaryData | None = None
     artists: ArtistsSummaryData | None = None
     genres: GenresSummaryData | None = None
     lyrics: LyricsSummaryData | None = None

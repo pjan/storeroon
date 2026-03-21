@@ -175,14 +175,12 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         return 0
 
     from storeroon.reports.queries import (
-        album_consistency,
         artists,
         genres,
         lyrics,
         overview,
         replaygain,
         tag_coverage,
-        tag_quality,
         technical,
     )
     from storeroon.reports.renderers.terminal import render_master_summary
@@ -205,16 +203,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         summary.tags = tag_coverage.summary_data(conn, conf.tags)
     except Exception as exc:
         log.warning("Tag coverage summary failed: %s", exc)
-
-    try:
-        summary.tag_quality = tag_quality.summary_data(conn, conf.tags)
-    except Exception as exc:
-        log.warning("Tag quality summary failed: %s", exc)
-
-    try:
-        summary.album_consistency = album_consistency.summary_data(conn)
-    except Exception as exc:
-        log.warning("Album consistency summary failed: %s", exc)
 
     try:
         summary.artists = artists.summary_data(
@@ -371,85 +359,6 @@ def _cmd_tags(args: argparse.Namespace) -> int:
 
     conn.close()
     return 0
-
-
-def _cmd_tag_quality(args: argparse.Namespace) -> int:
-    """Execute ``report tag-quality``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    artist_filter = _get_artist_filter(args)
-    if artist_filter and not _check_artist_has_results(conn, artist_filter):
-        output_console.print("[yellow]No tracks matched the given filters.[/yellow]")
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import tag_quality
-    from storeroon.reports.renderers.terminal import render_tag_quality
-
-    data = tag_quality.full_data(conn, conf.tags, artist_filter=artist_filter)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_tag_quality(output_console, data)
-    else:
-        filters = {"artist": artist_filter}
-        _write_json(args, conf, "tag_quality", data, filters=filters)
-
-    conn.close()
-    return 0
-
-
-def _cmd_album_consistency(args: argparse.Namespace) -> int:
-    """Execute ``report album-consistency``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    artist_filter = _get_artist_filter(args)
-    if artist_filter and not _check_artist_has_results(conn, artist_filter):
-        output_console.print("[yellow]No tracks matched the given filters.[/yellow]")
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import album_consistency
-    from storeroon.reports.renderers.terminal import render_album_consistency
-
-    data = album_consistency.full_data(conn, artist_filter=artist_filter)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_album_consistency(output_console, data)
-    else:
-        filters = {"artist": artist_filter}
-        _write_json(args, conf, "album_consistency", data, filters=filters)
-
-    conn.close()
-    return 0
-
 
 
 def _cmd_album_issues(args: argparse.Namespace) -> int:
@@ -663,7 +572,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
     all_written: list[Path] = []
 
     from storeroon.reports.queries import (
-        album_consistency,
         artists,
         genres,
         lyrics,
@@ -671,7 +579,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
         overview2,
         replaygain,
         tag_coverage,
-        tag_quality,
         technical,
     )
     from storeroon.reports.renderers.json_renderer import write_report
@@ -682,12 +589,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
-        ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn, conf.tags)),
-        (
-            "Album consistency",
-            "album_consistency",
-            lambda: album_consistency.full_data(conn),
-        ),
         (
             "Artists",
             "artists",
@@ -724,8 +625,6 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "collection-issues": _cmd_collection_issues,
     "technical": _cmd_technical,
     "tags": _cmd_tags,
-    "tag-quality": _cmd_tag_quality,
-    "album-consistency": _cmd_album_consistency,
     "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,
     "genres": _cmd_genres,
@@ -853,24 +752,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     _add_output_args(p_tags)
     _add_config_arg(p_tags)
-
-    # --- tag-quality ---
-    p_tag_quality = report_subs.add_parser(
-        "tag-quality",
-        help="Tag quality and integrity: format validation, external ID coverage",
-    )
-    _add_output_args(p_tag_quality)
-    _add_artist_args(p_tag_quality)
-    _add_config_arg(p_tag_quality)
-
-    # --- album-consistency ---
-    p_album_consistency = report_subs.add_parser(
-        "album-consistency",
-        help="Intra-album field consistency and track numbering checks",
-    )
-    _add_output_args(p_album_consistency)
-    _add_artist_args(p_album_consistency)
-    _add_config_arg(p_album_consistency)
 
     # --- album-issues ---
     p_album_issues = report_subs.add_parser(

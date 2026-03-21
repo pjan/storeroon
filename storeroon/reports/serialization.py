@@ -14,7 +14,6 @@ import typing
 from typing import Any, TypeVar, get_type_hints
 
 from storeroon.reports.models import (
-    AlbumConsistencyFullData,
     ArtistsFullData,
     CollectionIssuesFullData,
     GenresFullData,
@@ -22,7 +21,6 @@ from storeroon.reports.models import (
     Overview2FullData,
     ReplayGainFullData,
     TagCoverageFullData,
-    TagQualityFullData,
     TechnicalFullData,
 )
 
@@ -37,8 +35,6 @@ REPORT_DATA_CLASSES: dict[str, type] = {
     "collection_issues": CollectionIssuesFullData,
     "technical": TechnicalFullData,
     "tags": TagCoverageFullData,
-    "tag_quality": TagQualityFullData,
-    "album_consistency": AlbumConsistencyFullData,
     "artists": ArtistsFullData,
     "genres": GenresFullData,
     "lyrics": LyricsFullData,
