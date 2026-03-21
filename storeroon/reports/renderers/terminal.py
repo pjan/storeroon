@@ -23,12 +23,10 @@ from storeroon.reports.models import (
     BucketCount,
     GenresFullData,
     GenresSummaryData,
-    IssuesFullData,
-    IssuesSummaryData,
     LyricsFullData,
     LyricsSummaryData,
     MasterSummary,
-    OverviewFullData,
+    Overview2FullData,
     OverviewSummaryData,
     ReplayGainFullData,
     ReplayGainSummaryData,
@@ -115,7 +113,7 @@ def _indent(text: str, level: int) -> str:
     return "  " * level + text
 
 
-def render_overview(console: Console, data: OverviewFullData) -> None:
+def render_overview(console: Console, data: Overview2FullData) -> None:
     """Render the full collection overview report."""
     if data.totals.total_tracks == 0:
         _empty_db_message(console)
@@ -782,92 +780,6 @@ def render_album_consistency_summary(
 # =========================================================================
 
 
-def render_issues(console: Console, data: IssuesFullData) -> None:
-    """Render the full scan issues report (album-level overview)."""
-    _section_heading(console, "Scan Issues by Album")
-    console.print(f"Albums with issues: [bold]{fmt_count(data.total_albums)}[/bold]")
-    console.print(
-        f"Files with issues: [bold]{fmt_count(data.total_files_with_issues)}[/bold]"
-    )
-    console.print(f"Total issues: [bold]{fmt_count(data.total_issues)}[/bold]")
-    console.print()
-
-    if data.total_albums == 0:
-        console.print("[green]No albums with scan issues.[/green]")
-        return
-
-    # Main table: Albums with issue counts by severity
-    album_table = Table(show_header=True, header_style="bold")
-    album_table.add_column("Artist", style="cyan", max_width=30)
-    album_table.add_column("Album", max_width=40)
-    album_table.add_column("Catalog #", style="dim", max_width=15)
-    album_table.add_column("ERROR", justify="right", style="red")
-    album_table.add_column("WARNING", justify="right", style="yellow")
-    album_table.add_column("INFO", justify="right", style="blue")
-    album_table.add_column("Total", justify="right", style="bold")
-
-    # Show top 100 albums
-    for album in data.albums[:100]:
-        # Format catalog number
-        cat_num = album.catalog_number if album.catalog_number else "-"
-
-        # Format counts (show "-" for zero)
-        error_str = fmt_count(album.error_count) if album.error_count > 0 else "-"
-        warning_str = fmt_count(album.warning_count) if album.warning_count > 0 else "-"
-        info_str = fmt_count(album.info_count) if album.info_count > 0 else "-"
-
-        album_table.add_row(
-            album.artist,
-            album.album,
-            cat_num,
-            error_str,
-            warning_str,
-            info_str,
-            fmt_count(album.total_count),
-        )
-
-    console.print(album_table)
-
-    if len(data.albums) > 100:
-        console.print()
-        console.print(
-            f"[dim]  … and {len(data.albums) - 100} more albums "
-            f"(use --output csv/json for full list)[/dim]"
-        )
-
-    console.print()
-    console.print(
-        "[dim]Note: Use 'storeroon report album-issues <album_dir>' for detailed file-level issues[/dim]"
-    )
-
-
-def render_issues_summary(console: Console, data: IssuesSummaryData) -> None:
-    """Render scan issues summary in summary mode."""
-    _subsection_heading(console, "⚠  Scan Issues")
-
-    if data.total_albums_with_issues == 0:
-        console.print("  [green]No albums with scan issues.[/green]")
-        return
-
-    console.print(
-        f"  Albums with issues: [bold]{fmt_count(data.total_albums_with_issues)}[/bold]"
-    )
-    console.print(f"  Total issues: [bold]{fmt_count(data.total_issues)}[/bold]")
-
-    for sev in ("critical", "error", "warning", "info"):
-        count = data.by_severity.get(sev, 0)
-        if count > 0:
-            console.print(
-                f"    [{severity_style(sev)}]{sev.upper()}: {fmt_count(count)}[/]"
-            )
-
-    if data.top_albums:
-        console.print("  Top albums by issue count:")
-        for album in data.top_albums:
-            console.print(
-                f"    • {album.artist} - {album.album}: {fmt_count(album.total_count)}"
-            )
-
 
 def render_album_issues(console: Console, data) -> None:
     """Render detailed issues for a specific album."""
@@ -1437,8 +1349,6 @@ def render_master_summary(console: Console, summary: MasterSummary) -> None:
     if summary.album_consistency:
         render_album_consistency_summary(console, summary.album_consistency)
     if summary.duplicates:
-    if summary.issues:
-        render_issues_summary(console, summary.issues)
     if summary.artists:
         render_artists_summary(console, summary.artists)
     if summary.genres:

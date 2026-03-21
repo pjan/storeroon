@@ -828,7 +828,6 @@ class MasterSummary:
     tags: TagCoverageSummaryData | None = None
     tag_quality: TagQualitySummaryData | None = None
     album_consistency: AlbumConsistencySummaryData | None = None
-    issues: IssuesSummaryData | None = None
     artists: ArtistsSummaryData | None = None
     genres: GenresSummaryData | None = None
     lyrics: LyricsSummaryData | None = None

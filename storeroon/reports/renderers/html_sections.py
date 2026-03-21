@@ -46,12 +46,10 @@ from storeroon.reports.utils import (
 
 REPORT_TITLES: dict[str, str] = {
     "overview": "Collection Overview",
-    "overview2": "Collection Overview 2",
     "technical": "Audio Technical Quality",
     "tags": "Tag Coverage & Key Inventory",
     "tag_quality": "Tag Quality & Integrity",
     "album_consistency": "Intra-Album Consistency",
-    "issues": "Scan Issues",
     "artists": "Artist Name Consistency",
     "genres": "Genre Analysis",
     "lyrics": "Lyrics Coverage",
@@ -1884,13 +1882,11 @@ def build_overview2_sections(data: Overview2FullData) -> list[dict[str, Any]]:
 
 
 SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
-    "overview": build_overview_sections,
-    "overview2": build_overview2_sections,
+    "overview": build_overview2_sections,
     "technical": build_technical_sections,
     "tags": build_tag_coverage_sections,
     "tag_quality": build_tag_quality_sections,
     "album_consistency": build_album_consistency_sections,
-    "issues": build_issues_sections,
     "artists": build_artists_sections,
     "genres": build_genres_sections,
     "lyrics": build_lyrics_sections,

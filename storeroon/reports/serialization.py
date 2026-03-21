@@ -17,10 +17,8 @@ from storeroon.reports.models import (
     AlbumConsistencyFullData,
     ArtistsFullData,
     GenresFullData,
-    IssuesFullData,
     LyricsFullData,
     Overview2FullData,
-    OverviewFullData,
     ReplayGainFullData,
     TagCoverageFullData,
     TagQualityFullData,
@@ -34,13 +32,11 @@ T = TypeVar("T")
 # ---------------------------------------------------------------------------
 
 REPORT_DATA_CLASSES: dict[str, type] = {
-    "overview": OverviewFullData,
-    "overview2": Overview2FullData,
+    "overview": Overview2FullData,
     "technical": TechnicalFullData,
     "tags": TagCoverageFullData,
     "tag_quality": TagQualityFullData,
     "album_consistency": AlbumConsistencyFullData,
-    "issues": IssuesFullData,
     "artists": ArtistsFullData,
     "genres": GenresFullData,
     "lyrics": LyricsFullData,

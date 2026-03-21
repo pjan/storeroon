@@ -178,7 +178,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         album_consistency,
         artists,
         genres,
-        issues,
         lyrics,
         overview,
         replaygain,
@@ -216,11 +215,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         summary.album_consistency = album_consistency.summary_data(conn)
     except Exception as exc:
         log.warning("Album consistency summary failed: %s", exc)
-
-    try:
-        summary.issues = issues.summary_data(conn)
-    except Exception as exc:
-        log.warning("Issues summary failed: %s", exc)
 
     try:
         summary.artists = artists.summary_data(
@@ -269,52 +263,16 @@ def _cmd_overview(args: argparse.Namespace) -> int:
         conn.close()
         return 0
 
-    from storeroon.reports.queries import overview
-    from storeroon.reports.renderers.terminal import render_overview
-
-    data = overview.full_data(conn)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_overview(output_console, data)
-    else:
-        _write_json(args, conf, "overview", data)
-
-    conn.close()
-    return 0
-
-
-def _cmd_overview2(args: argparse.Namespace) -> int:
-    """Execute ``report overview2``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
     from storeroon.reports.queries import overview2
 
     data = overview2.full_data(conn)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
-        # Reuse the overview terminal renderer for now (no terminal-specific overview2 renderer)
         from storeroon.reports.renderers.terminal import render_overview
-        # For terminal, just show the basic overview — the enriched view is HTML-focused
-        from storeroon.reports.queries import overview as ov1
-        data_v1 = ov1.full_data(conn)
-        render_overview(output_console, data_v1)
+        render_overview(output_console, data)
     else:
-        _write_json(args, conf, "overview2", data)
+        _write_json(args, conf, "overview", data)
 
     conn.close()
     return 0
@@ -461,40 +419,6 @@ def _cmd_album_consistency(args: argparse.Namespace) -> int:
     conn.close()
     return 0
 
-
-
-def _cmd_issues(args: argparse.Namespace) -> int:
-    """Execute ``report issues``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import issues
-    from storeroon.reports.renderers.terminal import render_issues
-
-    min_severity = _get_min_severity(args)
-    data = issues.full_data(conn, min_severity=min_severity)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_issues(output_console, data)
-    else:
-        filters = {"min_severity": min_severity}
-        _write_json(args, conf, "issues", data, filters=filters)
-
-    conn.close()
-    return 0
 
 
 def _cmd_album_issues(args: argparse.Namespace) -> int:
@@ -711,9 +635,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         album_consistency,
         artists,
         genres,
-        issues,
         lyrics,
-        overview,
         overview2,
         replaygain,
         tag_coverage,
@@ -724,8 +646,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
 
     # (label, report_name, query_fn_call)
     report_specs: list[tuple[str, str, Callable[[], object]]] = [
-        ("Overview", "overview", lambda: overview.full_data(conn)),
-        ("Overview 2", "overview2", lambda: overview2.full_data(conn)),
+        ("Overview", "overview", lambda: overview2.full_data(conn)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
         ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn, conf.tags)),
@@ -734,7 +655,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
             "album_consistency",
             lambda: album_consistency.full_data(conn),
         ),
-        ("Scan issues", "issues", lambda: issues.full_data(conn)),
         (
             "Artists",
             "artists",
@@ -768,12 +688,10 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "all": _cmd_all,
     "summary": _cmd_summary,
     "overview": _cmd_overview,
-    "overview2": _cmd_overview2,
     "technical": _cmd_technical,
     "tags": _cmd_tags,
     "tag-quality": _cmd_tag_quality,
     "album-consistency": _cmd_album_consistency,
-    "issues": _cmd_issues,
     "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,
     "genres": _cmd_genres,
@@ -878,14 +796,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_output_args(p_overview)
     _add_config_arg(p_overview)
 
-    # --- overview2 ---
-    p_overview2 = report_subs.add_parser(
-        "overview2",
-        help="Collection overview with scan issues per album",
-    )
-    _add_output_args(p_overview2)
-    _add_config_arg(p_overview2)
-
     # --- technical ---
     p_technical = report_subs.add_parser(
         "technical",
@@ -919,20 +829,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_output_args(p_album_consistency)
     _add_artist_args(p_album_consistency)
     _add_config_arg(p_album_consistency)
-
-    # --- issues ---
-    p_issues = report_subs.add_parser(
-        "issues",
-        help="Scan issues grouped by album",
-    )
-    _add_output_args(p_issues)
-    p_issues.add_argument(
-        "--min-severity",
-        type=str,
-        choices=["info", "warning", "error", "critical"],
-        default="info",
-        help="Minimum severity to include (default: info)",
-    )
 
     # --- album-issues ---
     p_album_issues = report_subs.add_parser(
