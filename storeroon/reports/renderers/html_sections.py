@@ -263,6 +263,8 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
                 _card(fmt_count(t.total_album_artists), "Album Artists"),
                 _card(fmt_count(t.total_albums), "Albums"),
                 _card(fmt_count(t.total_tracks), "Tracks"),
+                _card(fmt_size_gb(t.total_size_bytes), "Size"),
+                _card(fmt_duration_hms(t.total_duration_seconds), "Duration"),
             ],
         )
     )
