@@ -175,16 +175,32 @@ h2 {
 
 /* Album alerts */
 .album-alerts {
-  background: var(--error-bg);
-  border: 1px solid var(--error);
   border-radius: 8px;
   padding: 0.75rem 1rem;
   margin-bottom: 1.5rem;
   font-size: 0.85rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
 }
-.album-alerts strong { color: var(--error); }
-.album-alerts ul { margin: 0.25rem 0 0 1.25rem; padding: 0; }
-.album-alerts li { margin-bottom: 0.15rem; }
+.album-alerts-title { font-weight: 700; margin-bottom: 0.4rem; }
+.album-alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+.alert-indicator {
+  width: 4px;
+  border-radius: 2px;
+  align-self: stretch;
+  min-height: 1.2rem;
+  flex-shrink: 0;
+}
+.alert-sev-critical { background: var(--critical); }
+.alert-sev-error { background: var(--error); }
+.alert-sev-warning { background: var(--warning); }
+.alert-sev-info { background: var(--info); }
+.alert-text { font-size: 0.85rem; }
 
 /* Disc header */
 .disc-header {
@@ -319,12 +335,13 @@ h2 {
 
 {% if data.album_level_issues %}
 <div class="album-alerts">
-  <strong>Album-level Issues</strong>
-  <ul>
-    {% for issue in data.album_level_issues %}
-    <li>{{ issue }}</li>
-    {% endfor %}
-  </ul>
+  <div class="album-alerts-title">Album-level Issues</div>
+  {% for issue in data.album_level_issues %}
+  <div class="album-alert-item">
+    <div class="alert-indicator alert-sev-{{ issue.severity }}"></div>
+    <div class="alert-text">{{ issue.description }}</div>
+  </div>
+  {% endfor %}
 </div>
 {% endif %}
 

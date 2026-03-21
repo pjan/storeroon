@@ -26,6 +26,7 @@ import json
 from storeroon.reports.models import (
     AlbumIssuesDetail,
     AlbumIssuesSummary,
+    AlbumLevelIssue,
     AlbumReportData,
     FileIssueDetail,
     IssuesFullData,
@@ -475,7 +476,7 @@ def album_report(
 
     # Group issues by file_id
     issues_by_file: dict[int, list[TrackIssue]] = defaultdict(list)
-    album_level_issues: list[str] = []
+    album_level_issues: list[AlbumLevelIssue] = []
     critical_count = 0
     error_count = 0
     warning_count = 0
@@ -504,7 +505,44 @@ def album_report(
         if fid and fid in file_map:
             issues_by_file[fid].append(ti)
         else:
-            album_level_issues.append(ir["description"])
+            album_level_issues.append(AlbumLevelIssue(
+                severity=sev,
+                description=ir["description"],
+            ))
+
+    # ── Album consistency checks ──
+    from storeroon.reports.queries.album_consistency import (
+        _CONSISTENCY_FIELDS,
+        _check_field_consistency,
+        _check_track_numbering,
+    )
+
+    # Field consistency violations → warnings
+    for field_name in _CONSISTENCY_FIELDS:
+        violation = _check_field_consistency(conn, album_dir, field_name, total_tracks)
+        if violation is not None:
+            vals = ", ".join(
+                f"'{v}' ({violation.track_counts_per_value.get(v, '?')})"
+                for v in violation.distinct_values[:5]
+            )
+            if len(violation.distinct_values) > 5:
+                vals += f" … +{len(violation.distinct_values) - 5} more"
+            desc = f"Inconsistent {field_name}: {vals}"
+            if violation.null_track_count > 0:
+                desc += f" ({violation.null_track_count} tracks missing the tag)"
+            album_level_issues.append(AlbumLevelIssue(severity="warning", description=desc))
+            warning_count += 1
+
+    # Track numbering violations → critical for missing tracks, warning for others
+    numbering_violations = _check_track_numbering(conn, album_dir, total_tracks)
+    for nv in numbering_violations:
+        if nv.check_type in ("missing_track", "missing_disc"):
+            sev = "critical"
+            critical_count += 1
+        else:
+            sev = "warning"
+            warning_count += 1
+        album_level_issues.append(AlbumLevelIssue(severity=sev, description=nv.description))
 
     # Build track details
     tracks: list[TrackDetail] = []
@@ -522,7 +560,7 @@ def album_report(
     tracks.sort(key=lambda t: (t.discnumber, t.tracknumber))
 
     # Health score: average of per-track scores.
-    # - Any critical issue → album score is 0
+    # - Any critical issue (including album-level) → album score is 0
     # - Per track: starts at 100, any error → 0, each warning → -5 (min 0)
     # - Info issues have no impact
     if critical_count > 0 or total_tracks == 0:

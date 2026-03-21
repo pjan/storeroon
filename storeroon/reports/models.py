@@ -364,7 +364,7 @@ class TrackNumberingViolation:
     """A single track numbering problem in an album directory."""
 
     album_dir: str
-    check_type: str  # e.g. "missing_track", "duplicate_track", "gap", "exceeds_total", "totaltracks_mismatch", "disc_gap"
+    check_type: str  # e.g. "missing_track", "duplicate_track", "exceeds_total", "totaltracks_mismatch", "missing_disc"
     description: str
 
 
@@ -618,6 +618,14 @@ class TrackDetail:
 
 
 @dataclass(frozen=True, slots=True)
+class AlbumLevelIssue:
+    """An album-level issue (not tied to a specific track)."""
+
+    severity: str  # critical, error, warning, info
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
 class AlbumReportData:
     """Complete data for the album detail report page."""
 
@@ -632,7 +640,7 @@ class AlbumReportData:
     error_count: int
     warning_count: int
     info_count: int
-    album_level_issues: list[str]  # issues not tied to a specific track
+    album_level_issues: list[AlbumLevelIssue]
     tracks: list[TrackDetail]
 
 

@@ -392,7 +392,7 @@ def _check_track_numbering(
             violations.append(
                 TrackNumberingViolation(
                     album_dir=album_dir,
-                    check_type="disc_gap",
+                    check_type="missing_disc",
                     description=(
                         f"Disc {md} missing (TOTALDISCS declares {declared_td})"
                     ),
