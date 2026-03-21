@@ -196,7 +196,7 @@ def _build_hierarchy(
             )
         )
 
-    result.sort(key=lambda a: a.track_count, reverse=True)
+    result.sort(key=lambda a: a.artist.lower())
     return result, totals
 
 

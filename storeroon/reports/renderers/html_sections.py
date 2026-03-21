@@ -1116,12 +1116,35 @@ def build_duplicates_sections(data: DuplicatesFullData) -> list[dict[str, Any]]:
 # =========================================================================
 
 
+def _album_severity_class(album: Any) -> str:
+    """Return CSS severity class for an album based on its worst issue level."""
+    if album.error_count > 0:
+        return "sev-error"
+    if album.warning_count > 0:
+        return "sev-warning"
+    if album.info_count > 0:
+        return "sev-info"
+    return "sev-clean"
+
+
+def _album_badges_html(album: Any) -> str:
+    """Build badge HTML for an album's severity counts."""
+    badges: list[str] = []
+    if album.error_count > 0:
+        badges.append(f'<span class="badge badge-error">{album.error_count}</span>')
+    if album.warning_count > 0:
+        badges.append(f'<span class="badge badge-warning">{album.warning_count}</span>')
+    if album.info_count > 0:
+        badges.append(f'<span class="badge badge-info">{album.info_count}</span>')
+    return "".join(badges)
+
+
 def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     sections.append(
         _section(
-            "Scan Issues by Album (v2)",
+            "Scan Issues by Album",
             summary_cards=[
                 _card(fmt_count(data.total_albums), "Albums with Issues"),
                 _card(fmt_count(data.total_files_with_issues), "Files with Issues"),
@@ -1139,52 +1162,55 @@ def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
         )
         return sections
 
-    # Main table: Albums with issue counts by severity
     from urllib.parse import quote
 
-    album_rows: list[list[dict[str, Any]]] = []
-    for album in data.albums[:100]:
-        cat_num = album.catalog_number if album.catalog_number else "-"
-        error_str = fmt_count(album.error_count) if album.error_count > 0 else "-"
-        warning_str = fmt_count(album.warning_count) if album.warning_count > 0 else "-"
-        info_str = fmt_count(album.info_count) if album.info_count > 0 else "-"
-
+    # Build tracklist-style album rows
+    rows_html: list[str] = []
+    for album in data.albums:
         encoded_dir = quote(album.album_dir, safe="")
-        album_rows.append(
-            [
-                _cell(f'<a href="/report/album-issues?dir={encoded_dir}" style="color:var(--accent)">{album.artist}</a>'),
-                _cell(f'<a href="/report/album-issues?dir={encoded_dir}" style="color:var(--accent)">{album.album}</a>'),
-                _cell(cat_num, cls="dim"),
-                _cell(error_str, cls="num severity-error"),
-                _cell(warning_str, cls="num severity-warning"),
-                _cell(info_str, cls="num severity-info"),
-                _cell(fmt_count(album.total_count), cls="num bold"),
-            ]
+        link = f"/report/album-issues?dir={encoded_dir}"
+        sev_cls = _album_severity_class(album)
+        cat_display = f" [{album.catalog_number}]" if album.catalog_number else ""
+        badges = _album_badges_html(album)
+
+        rows_html.append(
+            f'<a href="{link}" class="album-row" style="text-decoration:none;color:inherit">'
+            f'<div class="album-row-inner">'
+            f'<div class="album-indicator {sev_cls}"></div>'
+            f'<div class="album-artist">{album.artist}</div>'
+            f'<div class="album-title">{album.album}{cat_display}</div>'
+            f'<div class="album-badges">{badges}</div>'
+            f'</div>'
+            f'</a>'
         )
 
-    footer = None
-    if len(data.albums) > 100:
-        footer = f"Showing top 100 of {len(data.albums)} albums with issues."
+    # CSS for album rows (injected once)
+    style = (
+        '<style>'
+        '.album-row{display:block;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}'
+        '.album-row:hover{background:var(--bg-alt)}'
+        '.album-row-inner{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem}'
+        '.album-indicator{width:4px;border-radius:2px;align-self:stretch;min-height:1.5rem;flex-shrink:0}'
+        '.sev-error{background:var(--red)}'
+        '.sev-warning{background:var(--yellow)}'
+        '.sev-info{background:var(--dim)}'
+        '.sev-clean{background:var(--green)}'
+        '.album-artist{font-size:0.85rem;color:var(--dim);flex-shrink:0;width:20%}'
+        '.album-title{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+        '.album-badges{display:flex;gap:0.3rem;flex-shrink:0}'
+        '.badge{font-size:0.7rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;line-height:1.3}'
+        '.badge-error{background:var(--red-bg);color:var(--red)}'
+        '.badge-warning{background:var(--yellow-bg);color:var(--yellow)}'
+        '.badge-info{background:var(--bg-alt);color:var(--dim)}'
+        '</style>'
+    )
+
+    list_html = style + "".join(rows_html)
 
     sections.append(
         _section(
-            "Albums with Issues",
-            tables=[
-                _table(
-                    None,
-                    [
-                        _hdr("Artist"),
-                        _hdr("Album"),
-                        _hdr("Catalog #"),
-                        _hdr("ERROR", "num"),
-                        _hdr("WARNING", "num"),
-                        _hdr("INFO", "num"),
-                        _hdr("Total", "num"),
-                    ],
-                    album_rows,
-                    footer=footer,
-                )
-            ],
+            f"Albums with Issues ({fmt_count(data.total_albums)})",
+            text_blocks=[_text(list_html)],
         )
     )
 
