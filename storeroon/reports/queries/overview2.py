@@ -174,6 +174,33 @@ def full_data(conn: sqlite3.Connection) -> Overview2FullData:
                 track_scores.append(max(0, 100 - warnings * 5))
         return round(sum(track_scores) / len(track_scores)) if track_scores else 100
 
+    # ── Phase 2b: Run album consistency checks per folder ──
+    from storeroon.reports.queries.album_consistency import (
+        _CONSISTENCY_FIELDS,
+        _check_field_consistency,
+        _check_track_numbering,
+    )
+
+    for adir in folder_meta:
+        track_count = folder_tracks[adir]
+        # Field consistency → warning
+        for field_name in _CONSISTENCY_FIELDS:
+            violation = _check_field_consistency(conn, adir, field_name, track_count)
+            if violation is not None:
+                folder_issues[adir]["warning"] += 1
+                total_issues += 1
+                albums_with_issues.add(adir)
+
+        # Track numbering violations
+        numbering_violations = _check_track_numbering(conn, adir, track_count)
+        for nv in numbering_violations:
+            if nv.check_type in ("missing_track", "missing_disc"):
+                folder_issues[adir]["critical"] += 1
+            else:
+                folder_issues[adir]["warning"] += 1
+            total_issues += 1
+            albums_with_issues.add(adir)
+
     # ── Phase 3: Build hierarchy ──
     # Album level
     rtype_groups: dict[tuple[str, str], list[AlbumBreakdown2]] = defaultdict(list)
