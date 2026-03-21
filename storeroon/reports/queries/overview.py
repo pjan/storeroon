@@ -1,9 +1,11 @@
 """
 storeroon.reports.queries.overview — Report 1: Collection overview.
 
-Aggregate queries against ``files``, ``flac_properties``, and ``raw_tags``.
-Builds a tag-based hierarchical breakdown:
-    Artist (ALBUMARTIST) → Release type (RELEASETYPE) → Album (ALBUM) → Catalog (CATALOGNUMBER)
+Builds a folder-based hierarchical breakdown:
+    Artist (ALBUMARTIST) → Release type (RELEASETYPE) → Album (folder)
+
+Level 0 (album) = all files in the same parent directory.
+Display: "{originaldate} - {album} [{catalognumber}]"
 
 Public API:
     full_data(conn) -> OverviewFullData
@@ -18,7 +20,6 @@ from collections import defaultdict
 from storeroon.reports.models import (
     AlbumBreakdown,
     ArtistBreakdown,
-    CatalogBreakdown,
     OverviewFullData,
     OverviewSummaryData,
     OverviewTotals,
@@ -26,7 +27,7 @@ from storeroon.reports.models import (
 )
 
 # ---------------------------------------------------------------------------
-# Query: one row per file with relevant tag values
+# Query: one row per file with folder and tag metadata
 # ---------------------------------------------------------------------------
 
 _FILES_SQL = """
@@ -34,12 +35,12 @@ SELECT
     f.id,
     f.size_bytes,
     fp.duration_seconds,
-    COALESCE(t_aa.tag_value, 'Unknown')         AS albumartist,
-    COALESCE(t_rt.tag_value, 'unknown')          AS releasetype,
-    COALESCE(t_al.tag_value, 'Unknown')          AS album,
-    COALESCE(t_cn.tag_value, 'none')             AS catalognumber,
-    COALESCE(t_td.tag_value, '1')                AS totaldiscs,
-    t_od.tag_value                                AS originaldate
+    SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) AS album_dir,
+    COALESCE(t_aa.tag_value, 'Unknown')   AS albumartist,
+    COALESCE(t_rt.tag_value, 'unknown')   AS releasetype,
+    COALESCE(t_al.tag_value, 'Unknown')   AS album,
+    t_cn.tag_value                         AS catalognumber,
+    t_od.tag_value                         AS originaldate
 FROM files f
 LEFT JOIN flac_properties fp ON fp.file_id = f.id
 LEFT JOIN (
@@ -60,154 +61,112 @@ LEFT JOIN (
 ) t_cn ON t_cn.file_id = f.id
 LEFT JOIN (
     SELECT file_id, tag_value FROM raw_tags
-    WHERE tag_key_upper = 'TOTALDISCS' AND tag_index = 0
-) t_td ON t_td.file_id = f.id
-LEFT JOIN (
-    SELECT file_id, tag_value FROM raw_tags
     WHERE tag_key_upper = 'ORIGINALDATE' AND tag_index = 0
 ) t_od ON t_od.file_id = f.id
 WHERE f.status = 'ok'
 """
 
 
-def _parse_totaldiscs(value: str) -> int:
-    """Parse TOTALDISCS to an int, defaulting to 1."""
-    try:
-        n = int(value.strip())
-        return max(n, 1)
-    except (ValueError, AttributeError):
-        return 1
-
-
 # ---------------------------------------------------------------------------
 # Hierarchy builder
 # ---------------------------------------------------------------------------
 
-# Key type for catalog-level grouping
-_CatKey = tuple[str, str, str, str]  # (artist, releasetype, album, catalognumber)
+
+def _make_display_name(
+    original_date: str | None, album: str, catalog_number: str | None
+) -> str:
+    """Build display string: '{originaldate} - {album} [{catalognumber}]'."""
+    parts: list[str] = []
+    if original_date and original_date.strip():
+        parts.append(original_date.strip())
+    parts.append(album)
+    name = " - ".join(parts)
+    if catalog_number and catalog_number.strip():
+        name += f" [{catalog_number.strip()}]"
+    return name
 
 
 def _build_hierarchy(
     conn: sqlite3.Connection,
 ) -> tuple[list[ArtistBreakdown], OverviewTotals]:
-    """Build the full 4-level hierarchy from tag values and compute totals."""
+    """Build the 3-level hierarchy grouped by folder."""
     rows = conn.execute(_FILES_SQL).fetchall()
 
-    # Accumulate per catalog-number group
-    cat_tracks: dict[_CatKey, int] = defaultdict(int)
-    cat_size: dict[_CatKey, int] = defaultdict(int)
-    cat_duration: dict[_CatKey, float] = defaultdict(float)
-    cat_totaldiscs: dict[_CatKey, int] = {}  # take max TOTALDISCS per catalog
-    # Track originaldate per (artist, releasetype, album) — take first non-null
-    _AlbumKey = tuple[str, str, str]
-    album_originaldate: dict[_AlbumKey, str | None] = {}
+    # Accumulate per folder (album_dir)
+    folder_tracks: dict[str, int] = defaultdict(int)
+    folder_size: dict[str, int] = defaultdict(int)
+    folder_duration: dict[str, float] = defaultdict(float)
+    # Per-folder metadata (take first non-null from any file in folder)
+    folder_meta: dict[str, dict[str, str | None]] = {}
 
     total_tracks = 0
     total_size = 0
     total_duration = 0.0
 
     for row in rows:
-        artist: str = row["albumartist"] or "Unknown"
-        rtype: str = (row["releasetype"] or "unknown").lower()
-        album: str = row["album"] or "Unknown"
-        catno: str = (row["catalognumber"] or "none").strip() or "none"
-        totaldiscs = _parse_totaldiscs(row["totaldiscs"])
+        adir: str = row["album_dir"] or ""
         size: int = row["size_bytes"] or 0
         duration: float = row["duration_seconds"] or 0.0
-        odate: str | None = row["originaldate"]
 
-        key: _CatKey = (artist, rtype, album, catno)
-        akey: _AlbumKey = (artist, rtype, album)
+        folder_tracks[adir] += 1
+        folder_size[adir] += size
+        folder_duration[adir] += duration
 
-        cat_tracks[key] += 1
-        cat_size[key] += size
-        cat_duration[key] += duration
-        if key not in cat_totaldiscs or totaldiscs > cat_totaldiscs[key]:
-            cat_totaldiscs[key] = totaldiscs
-
-        # Keep first non-null originaldate per album
-        if akey not in album_originaldate and odate and odate.strip():
-            album_originaldate[akey] = odate.strip()
+        if adir not in folder_meta:
+            folder_meta[adir] = {
+                "albumartist": row["albumartist"],
+                "releasetype": (row["releasetype"] or "unknown").lower(),
+                "album": row["album"],
+                "catalognumber": row["catalognumber"],
+                "originaldate": row["originaldate"],
+            }
 
         total_tracks += 1
         total_size += size
         total_duration += duration
 
-    # Compute totals
-    all_artists: set[str] = set()
-    all_albums: set[tuple[str, str]] = set()  # (artist, album)
-    all_releases: set[_CatKey] = set()
+    # Build AlbumBreakdown per folder
+    all_albums: list[tuple[str, str, str, AlbumBreakdown]] = []
+    # (artist, releasetype, sort_key, AlbumBreakdown)
 
-    for key in cat_tracks:
-        artist, rtype, album, catno = key
-        all_artists.add(artist)
-        all_albums.add((artist, album))
-        all_releases.add(key)
-
-    totals = OverviewTotals(
-        total_album_artists=len(all_artists),
-        total_albums=len(all_albums),
-        total_releases=len(all_releases),
-        total_tracks=total_tracks,
-        total_duration_seconds=total_duration,
-        total_size_bytes=total_size,
-    )
-
-    # Build bottom-up: Catalog → Album → ReleaseType → Artist
-
-    # Group catalogs by (artist, releasetype, album)
-    album_groups: dict[tuple[str, str, str], list[CatalogBreakdown]] = defaultdict(list)
-    for key in sorted(cat_tracks.keys()):
-        artist, rtype, album, catno = key
-        cb = CatalogBreakdown(
-            catalog_number=catno,
-            track_count=cat_tracks[key],
-            disc_count=cat_totaldiscs.get(key, 1),
-            total_size_bytes=cat_size[key],
-            total_duration_seconds=cat_duration[key],
+    for adir, meta in folder_meta.items():
+        artist = meta["albumartist"] or "Unknown"
+        rtype = meta["releasetype"] or "unknown"
+        display = _make_display_name(
+            meta["originaldate"], meta["album"] or "Unknown", meta["catalognumber"]
         )
-        album_groups[(artist, rtype, album)].append(cb)
-
-    # Group albums by (artist, releasetype)
-    rtype_groups: dict[tuple[str, str], list[AlbumBreakdown]] = defaultdict(list)
-    for (artist, rtype, album), catalogs in album_groups.items():
-        odate = album_originaldate.get((artist, rtype, album))
         ab = AlbumBreakdown(
-            album=album,
-            original_date=odate,
-            track_count=sum(c.track_count for c in catalogs),
-            disc_count=sum(c.disc_count for c in catalogs),
-            total_size_bytes=sum(c.total_size_bytes for c in catalogs),
-            total_duration_seconds=sum(c.total_duration_seconds for c in catalogs),
-            catalogs=catalogs,
+            album_dir=adir,
+            display_name=display,
+            track_count=folder_tracks[adir],
+            total_size_bytes=folder_size[adir],
+            total_duration_seconds=folder_duration[adir],
         )
+        all_albums.append((artist, rtype, display.lower(), ab))
+
+    # Group by (artist, releasetype)
+    rtype_groups: dict[tuple[str, str], list[AlbumBreakdown]] = defaultdict(list)
+    for artist, rtype, sort_key, ab in all_albums:
         rtype_groups[(artist, rtype)].append(ab)
 
-    # Sort albums within each release type by display string
-    def _album_sort_key(ab: AlbumBreakdown) -> str:
-        parts: list[str] = []
-        if ab.original_date:
-            parts.append(ab.original_date)
-        parts.append(ab.album)
-        return " - ".join(parts).lower()
-
+    # Sort albums within each release type by display name
     for albums in rtype_groups.values():
-        albums.sort(key=_album_sort_key)
+        albums.sort(key=lambda a: a.display_name.lower())
 
-    # Group release types by artist, sorted alphabetically
+    # Group by artist
     artist_groups: dict[str, list[ReleaseTypeBreakdown]] = defaultdict(list)
     for (artist, rtype), albums in rtype_groups.items():
         rtb = ReleaseTypeBreakdown(
             release_type=rtype,
+            album_count=len(albums),
             track_count=sum(a.track_count for a in albums),
-            disc_count=sum(a.disc_count for a in albums),
             total_size_bytes=sum(a.total_size_bytes for a in albums),
             total_duration_seconds=sum(a.total_duration_seconds for a in albums),
             albums=albums,
         )
         artist_groups[artist].append(rtb)
 
-    # Sort release types within each artist alphabetically
+    # Sort release types within each artist
     for rtypes in artist_groups.values():
         rtypes.sort(key=lambda rt: rt.release_type.lower())
 
@@ -218,13 +177,24 @@ def _build_hierarchy(
         result.append(
             ArtistBreakdown(
                 artist=artist,
+                album_count=sum(rt.album_count for rt in rtypes),
                 track_count=sum(rt.track_count for rt in rtypes),
-                disc_count=sum(rt.disc_count for rt in rtypes),
                 total_size_bytes=sum(rt.total_size_bytes for rt in rtypes),
                 total_duration_seconds=sum(rt.total_duration_seconds for rt in rtypes),
                 release_types=rtypes,
             )
         )
+
+    all_artists = {meta["albumartist"] or "Unknown" for meta in folder_meta.values()}
+
+    totals = OverviewTotals(
+        total_album_artists=len(all_artists),
+        total_albums=len(folder_meta),
+        total_tracks=total_tracks,
+        total_duration_seconds=total_duration,
+        total_size_bytes=total_size,
+    )
+
     return result, totals
 
 

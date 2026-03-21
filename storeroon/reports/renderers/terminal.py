@@ -132,7 +132,6 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
     totals_table.add_column("Value", justify="right")
     totals_table.add_row("Album artists", fmt_count(t.total_album_artists))
     totals_table.add_row("Albums", fmt_count(t.total_albums))
-    totals_table.add_row("Releases", fmt_count(t.total_releases))
     totals_table.add_row("Tracks", fmt_count(t.total_tracks))
     totals_table.add_row("Duration", fmt_duration_hms(t.total_duration_seconds))
     totals_table.add_row("Size", fmt_size_gb(t.total_size_bytes))
@@ -142,53 +141,36 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
     if data.by_artist:
         _subsection_heading(console, "Collection Breakdown")
         tbl = Table(show_header=True, header_style="bold", pad_edge=False)
-        tbl.add_column("Name", min_width=40)
+        tbl.add_column("Name", min_width=50)
+        tbl.add_column("Albums", justify="right")
         tbl.add_column("Tracks", justify="right")
-        tbl.add_column("Discs", justify="right")
         tbl.add_column("Size", justify="right")
         tbl.add_column("Duration", justify="right")
 
         for a in data.by_artist:
             tbl.add_row(
                 f"[cyan bold]{a.artist}[/cyan bold]",
+                fmt_count(a.album_count),
                 fmt_count(a.track_count),
-                fmt_count(a.disc_count),
                 fmt_size_gb(a.total_size_bytes),
                 fmt_duration_hms(a.total_duration_seconds),
             )
             for rt in a.release_types:
                 tbl.add_row(
                     f"[green]{_indent(rt.release_type, 1)}[/green]",
+                    fmt_count(rt.album_count),
                     fmt_count(rt.track_count),
-                    fmt_count(rt.disc_count),
                     fmt_size_gb(rt.total_size_bytes),
                     fmt_duration_hms(rt.total_duration_seconds),
                 )
                 for alb in rt.albums:
-                    # Build display: "{originaldate} - {album} [{catalognumber}]"
-                    alb_parts: list[str] = []
-                    if alb.original_date:
-                        alb_parts.append(alb.original_date)
-                    alb_parts.append(alb.album)
-                    alb_display = " - ".join(alb_parts)
-                    if len(alb.catalogs) == 1 and alb.catalogs[0].catalog_number != "none":
-                        alb_display += f" [{alb.catalogs[0].catalog_number}]"
                     tbl.add_row(
-                        _indent(alb_display, 2),
+                        _indent(alb.display_name, 2),
+                        "",
                         fmt_count(alb.track_count),
-                        fmt_count(alb.disc_count),
                         fmt_size_gb(alb.total_size_bytes),
                         fmt_duration_hms(alb.total_duration_seconds),
                     )
-                    if len(alb.catalogs) > 1:
-                        for c in alb.catalogs:
-                            tbl.add_row(
-                                f"[dim]{_indent(f'[{c.catalog_number}]', 3)}[/dim]",
-                                f"[dim]{fmt_count(c.track_count)}[/dim]",
-                                f"[dim]{fmt_count(c.disc_count)}[/dim]",
-                                f"[dim]{fmt_size_gb(c.total_size_bytes)}[/dim]",
-                                f"[dim]{fmt_duration_hms(c.total_duration_seconds)}[/dim]",
-                            )
         console.print(tbl)
 
 
@@ -207,7 +189,6 @@ def render_overview_summary(console: Console, data: OverviewSummaryData) -> None
     table.add_column("Value", justify="right")
     table.add_row("Album artists", fmt_count(t.total_album_artists))
     table.add_row("Albums", fmt_count(t.total_albums))
-    table.add_row("Releases", fmt_count(t.total_releases))
     table.add_row("Tracks", fmt_count(t.total_tracks))
     table.add_row("Duration", fmt_duration_hms(t.total_duration_seconds))
     table.add_row("Size", fmt_size_gb(t.total_size_bytes))

@@ -165,99 +165,82 @@ def _bucket_table(
 # =========================================================================
 
 
-def _stats_badge(tracks: int, discs: int, size: int, duration: float) -> str:
-    """Build right-side stats badges for a collection row."""
-    return (
-        f'<span class="coll-stat">{fmt_count(tracks)} tracks</span>'
-        f'<span class="coll-stat">{fmt_count(discs)} discs</span>'
-        f'<span class="coll-stat">{fmt_size_gb(size)}</span>'
-        f'<span class="coll-stat">{fmt_duration_hms(duration)}</span>'
-    )
-
-
-def _album_display_name(alb: Any) -> str:
-    """Format album display: '{originaldate} - {album} [{catalognumber}]'."""
-    parts: list[str] = []
-    if alb.original_date:
-        parts.append(alb.original_date)
-    parts.append(alb.album)
-    name = " - ".join(parts)
-    if len(alb.catalogs) == 1 and alb.catalogs[0].catalog_number != "none":
-        name += f" [{alb.catalogs[0].catalog_number}]"
-    return name
-
-
 def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
-    """Build a tracklist-style hierarchy with expandable rows."""
-    # CSS for the collection breakdown (shared style with issues report)
+    """Build a tracklist-style collection hierarchy with expandable rows."""
+    from urllib.parse import quote
+
     style = (
         "<style>"
-        ".coll-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;cursor:pointer;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}"
+        ".coll-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;"
+        "cursor:pointer;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}"
         ".coll-row:hover{background:var(--bg-alt)}"
-        ".coll-indent{flex-shrink:0}"
         ".coll-name{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
         ".coll-name strong{font-weight:600}"
-        ".coll-stats{display:flex;gap:0.5rem;flex-shrink:0}"
-        ".coll-stat{font-size:0.75rem;color:var(--dim);font-variant-numeric:tabular-nums}"
+        ".coll-badges{display:flex;gap:0.35rem;flex-shrink:0}"
+        ".coll-badge{font-size:0.7rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:4px;"
+        "background:var(--bg-alt);color:var(--dim);font-variant-numeric:tabular-nums;"
+        "min-width:4.5rem;text-align:right;display:inline-block}"
         ".coll-children{display:none;padding-left:1.5rem}"
         ".coll-children.open{display:block}"
-        ".coll-level2{padding-left:1.5rem}"
-        ".coll-level3{padding-left:3rem}"
         ".coll-dim{color:var(--dim);font-size:0.85rem}"
+        "a.coll-row{text-decoration:none;color:inherit}"
         "</style>"
     )
 
     rows: list[str] = [style]
+    _counter = [0]
+
+    def _uid() -> str:
+        _counter[0] += 1
+        return f"c{_counter[0]}"
+
+    def _badges(album_count: int, track_count: int, size: int, duration: float) -> str:
+        return (
+            f'<span class="coll-badge">{fmt_count(album_count)} albums</span>'
+            f'<span class="coll-badge">{fmt_count(track_count)} tracks</span>'
+            f'<span class="coll-badge">{fmt_size_gb(size)}</span>'
+            f'<span class="coll-badge">{fmt_duration_hms(duration)}</span>'
+        )
+
+    def _album_badges(track_count: int, size: int, duration: float) -> str:
+        return (
+            f'<span class="coll-badge">{fmt_count(track_count)} tracks</span>'
+            f'<span class="coll-badge">{fmt_size_gb(size)}</span>'
+            f'<span class="coll-badge">{fmt_duration_hms(duration)}</span>'
+        )
 
     for a in artists:
-        artist_id = f"artist-{id(a)}"
+        aid = _uid()
         rows.append(
-            f'<div class="coll-row" onclick="toggleColl(\'{artist_id}\')">'
+            f'<div class="coll-row" onclick="toggleColl(\'{aid}\')">'
             f'<div class="coll-name"><strong>{a.artist}</strong></div>'
-            f'<div class="coll-stats">{_stats_badge(a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds)}</div>'
+            f'<div class="coll-badges">{_badges(a.album_count, a.track_count, a.total_size_bytes, a.total_duration_seconds)}</div>'
             f"</div>"
-            f'<div class="coll-children" id="{artist_id}">'
+            f'<div class="coll-children" id="{aid}">'
         )
 
         for rt in a.release_types:
-            rt_id = f"rt-{id(rt)}"
+            rid = _uid()
             rows.append(
-                f'<div class="coll-row" onclick="toggleColl(\'{rt_id}\'); event.stopPropagation()">'
+                f'<div class="coll-row" onclick="toggleColl(\'{rid}\'); event.stopPropagation()">'
                 f'<div class="coll-name coll-dim">{rt.release_type}</div>'
-                f'<div class="coll-stats">{_stats_badge(rt.track_count, rt.disc_count, rt.total_size_bytes, rt.total_duration_seconds)}</div>'
+                f'<div class="coll-badges">{_badges(rt.album_count, rt.track_count, rt.total_size_bytes, rt.total_duration_seconds)}</div>'
                 f"</div>"
-                f'<div class="coll-children" id="{rt_id}">'
+                f'<div class="coll-children" id="{rid}">'
             )
 
             for alb in rt.albums:
-                display_name = _album_display_name(alb)
-                if len(alb.catalogs) > 1:
-                    alb_id = f"alb-{id(alb)}"
-                    rows.append(
-                        f'<div class="coll-row coll-level2" onclick="toggleColl(\'{alb_id}\'); event.stopPropagation()">'
-                        f'<div class="coll-name">{display_name}</div>'
-                        f'<div class="coll-stats">{_stats_badge(alb.track_count, alb.disc_count, alb.total_size_bytes, alb.total_duration_seconds)}</div>'
-                        f"</div>"
-                        f'<div class="coll-children" id="{alb_id}">'
-                    )
-                    for c in alb.catalogs:
-                        rows.append(
-                            f'<div class="coll-row coll-level3">'
-                            f'<div class="coll-name coll-dim">[{c.catalog_number}]</div>'
-                            f'<div class="coll-stats">{_stats_badge(c.track_count, c.disc_count, c.total_size_bytes, c.total_duration_seconds)}</div>'
-                            f"</div>"
-                        )
-                    rows.append("</div>")  # close alb children
-                else:
-                    rows.append(
-                        f'<div class="coll-row coll-level2">'
-                        f'<div class="coll-name">{display_name}</div>'
-                        f'<div class="coll-stats">{_stats_badge(alb.track_count, alb.disc_count, alb.total_size_bytes, alb.total_duration_seconds)}</div>'
-                        f"</div>"
-                    )
+                encoded_dir = quote(alb.album_dir, safe="")
+                link = f"/report/album-issues?dir={encoded_dir}"
+                rows.append(
+                    f'<a class="coll-row" href="{link}" onclick="event.stopPropagation()">'
+                    f'<div class="coll-name">{alb.display_name}</div>'
+                    f'<div class="coll-badges">{_album_badges(alb.track_count, alb.total_size_bytes, alb.total_duration_seconds)}</div>'
+                    f"</a>"
+                )
 
-            rows.append("</div>")  # close rt children
-        rows.append("</div>")  # close artist children
+            rows.append("</div>")
+        rows.append("</div>")
 
     rows.append("""<script>
 function toggleColl(id) {
@@ -279,7 +262,6 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
             summary_cards=[
                 _card(fmt_count(t.total_album_artists), "Album Artists"),
                 _card(fmt_count(t.total_albums), "Albums"),
-                _card(fmt_count(t.total_releases), "Releases"),
                 _card(fmt_count(t.total_tracks), "Tracks"),
             ],
         )

@@ -92,35 +92,21 @@ class OverviewTotals:
     """Top-level collection totals."""
 
     total_album_artists: int  # distinct ALBUMARTIST tag values
-    total_albums: int  # distinct (ALBUMARTIST, ALBUM) pairs
-    total_releases: int  # distinct (ALBUMARTIST, ALBUM, CATALOGNUMBER) tuples
+    total_albums: int  # distinct album folders
     total_tracks: int
     total_duration_seconds: float
     total_size_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
-class CatalogBreakdown:
-    """Innermost level: a specific catalog number / version of an album."""
-
-    catalog_number: str  # CATALOGNUMBER tag value, or "none"
-    track_count: int
-    disc_count: int  # TOTALDISCS tag value (default 1)
-    total_size_bytes: int
-    total_duration_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
 class AlbumBreakdown:
-    """An album, possibly with multiple catalog releases."""
+    """A single album folder in the collection."""
 
-    album: str  # ALBUM tag value
-    original_date: str | None  # ORIGINALDATE tag value
+    album_dir: str  # folder path (unique identifier)
+    display_name: str  # "{originaldate} - {album} [{catalognumber}]"
     track_count: int
-    disc_count: int  # sum of catalog disc_counts
     total_size_bytes: int
     total_duration_seconds: float
-    catalogs: list[CatalogBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,8 +114,8 @@ class ReleaseTypeBreakdown:
     """A release type (album, ep, single, etc.) within an artist."""
 
     release_type: str  # RELEASETYPE tag value, or "unknown"
+    album_count: int
     track_count: int
-    disc_count: int
     total_size_bytes: int
     total_duration_seconds: float
     albums: list[AlbumBreakdown]
@@ -140,8 +126,8 @@ class ArtistBreakdown:
     """Top-level: breakdown per album artist."""
 
     artist: str  # ALBUMARTIST tag value
+    album_count: int
     track_count: int
-    disc_count: int
     total_size_bytes: int
     total_duration_seconds: float
     release_types: list[ReleaseTypeBreakdown]
