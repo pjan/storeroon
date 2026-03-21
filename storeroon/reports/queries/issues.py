@@ -405,8 +405,6 @@ WHERE si.resolved = 0
 ORDER BY si.file_id, si.severity, si.issue_type
 """
 
-_SEVERITY_WEIGHT = {"critical": 10, "error": 5, "warning": 2, "info": 0.5}
-
 _BLOCKER_TYPES = frozenset({"file_unreadable", "tag_read_error"})
 _OPTIMIZATION_TYPES = frozenset({"no_audio_md5", "missing_other_tag", "invalid_other_tag"})
 
@@ -523,19 +521,22 @@ def album_report(
 
     tracks.sort(key=lambda t: (t.discnumber, t.tracknumber))
 
-    # Health score: 100 minus weighted penalties, clamped to 0-100
-    total_issues = critical_count + error_count + warning_count + info_count
-    if total_tracks == 0:
+    # Health score: average of per-track scores.
+    # - Any critical issue → album score is 0
+    # - Per track: starts at 100, any error → 0, each warning → -5 (min 0)
+    # - Info issues have no impact
+    if critical_count > 0 or total_tracks == 0:
         health = 0
     else:
-        penalty = (
-            critical_count * _SEVERITY_WEIGHT["critical"]
-            + error_count * _SEVERITY_WEIGHT["error"]
-            + warning_count * _SEVERITY_WEIGHT["warning"]
-            + info_count * _SEVERITY_WEIGHT["info"]
-        )
-        # Normalize: max penalty per track is ~10 (critical), so divide by track count
-        health = max(0, min(100, round(100 - (penalty / total_tracks) * 10)))
+        track_scores: list[int] = []
+        for track in tracks:
+            has_error = any(i.severity in ("critical", "error") for i in track.issues)
+            if has_error:
+                track_scores.append(0)
+            else:
+                warning_count_track = sum(1 for i in track.issues if i.severity == "warning")
+                track_scores.append(max(0, 100 - warning_count_track * 5))
+        health = round(sum(track_scores) / len(track_scores)) if track_scores else 100
 
     return AlbumReportData(
         artist=artist,
