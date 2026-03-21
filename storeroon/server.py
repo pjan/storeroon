@@ -249,6 +249,53 @@ class StoreroonHandler(BaseHTTPRequestHandler):
                     result.append((sev, counts[sev]))
             return result
 
+        _TRACK_ISSUE_TYPES = frozenset({
+            "file_unreadable", "tag_read_error", "no_audio_md5", "duplicate_checksum",
+        })
+
+        def classify_track_issues(track: Any) -> dict[str, Any]:
+            """Classify a track's issues into the display structure."""
+            track_issues: list[Any] = []  # non-tag issues
+            # Tag issues grouped: {severity_bucket: {sub_type: [field_names]}}
+            # severity_bucket: "required" (error), "recommended" (warning), "improvement" (info)
+            # sub_type: "missing", "invalid", "encoding"
+            tag_buckets: dict[str, dict[str, list[str]]] = {
+                "required": {"missing": [], "invalid": []},
+                "recommended": {"missing": [], "invalid": [], "encoding": []},
+                "improvement": {"missing": [], "invalid": []},
+            }
+
+            for issue in track.issues:
+                itype = issue.issue_type
+                if itype in _TRACK_ISSUE_TYPES:
+                    track_issues.append(issue)
+                elif itype == "missing_required_tag":
+                    tag_buckets["required"]["missing"].append(issue.field or itype)
+                elif itype == "invalid_required_tag":
+                    tag_buckets["required"]["invalid"].append(issue.field or itype)
+                elif itype == "missing_recommended_tag":
+                    tag_buckets["recommended"]["missing"].append(issue.field or itype)
+                elif itype == "invalid_recommended_tag":
+                    tag_buckets["recommended"]["invalid"].append(issue.field or itype)
+                elif itype == "tag_encoding_suspect":
+                    tag_buckets["recommended"]["encoding"].append(issue.field or itype)
+                elif itype == "missing_other_tag":
+                    tag_buckets["improvement"]["missing"].append(issue.field or itype)
+                elif itype == "invalid_other_tag":
+                    tag_buckets["improvement"]["invalid"].append(issue.field or itype)
+                else:
+                    track_issues.append(issue)
+
+            return {
+                "track_issues": track_issues,
+                "tag_buckets": tag_buckets,
+                "has_tag_issues": any(
+                    fields
+                    for bucket in tag_buckets.values()
+                    for fields in bucket.values()
+                ),
+            }
+
         template = _load_template("album_report.html")
         html = template.render(
             title=title,
@@ -258,6 +305,7 @@ class StoreroonHandler(BaseHTTPRequestHandler):
             health_color=health_color,
             track_severity_class=track_severity_class,
             track_badge_counts=track_badge_counts,
+            classify_track_issues=classify_track_issues,
         )
         self._send_html(html)
 

@@ -218,21 +218,43 @@ h2 {
 
 /* Expanded panel */
 .track-expand { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
-.track.open .track-expand { max-height: 800px; }
-.buckets { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; padding: 0.75rem 0 0.75rem 1rem; }
-.bucket { border-radius: 8px; padding: 0.65rem 0.75rem; font-size: 0.8rem; }
-.bucket-blocker { background: var(--critical-bg); border-left: 3px solid var(--critical); }
-.bucket-metadata { background: var(--warning-bg); border-left: 3px solid var(--warning); }
-.bucket-optimization { background: var(--info-bg); border-left: 3px solid var(--info); }
-.bucket h4 { margin: 0 0 0.4rem 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
-.bucket-blocker h4 { color: var(--critical); }
-.bucket-metadata h4 { color: var(--error); }
-.bucket-optimization h4 { color: var(--info); }
+.track.open .track-expand { max-height: 2000px; }
+.expand-inner { padding: 0.5rem 0 0.75rem 1rem; }
+
+/* Issue section containers */
+.issue-section { margin-bottom: 0.75rem; }
+.issue-section-title {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--dim); margin: 0 0 0.4rem 0;
+}
+
+/* Severity buckets — full width */
+.sev-bucket { border-radius: 8px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
+.sev-bucket-error { background: var(--error-bg); border-left: 3px solid var(--error); }
+.sev-bucket-warning { background: var(--warning-bg); border-left: 3px solid var(--warning); }
+.sev-bucket-info { background: var(--info-bg); border-left: 3px solid var(--info); }
+.sev-bucket h4 {
+  margin: 0 0 0.35rem 0; font-size: 0.75rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.sev-bucket-error h4 { color: var(--error); }
+.sev-bucket-warning h4 { color: var(--warning); }
+.sev-bucket-info h4 { color: var(--info); }
+
+/* Sub-sections within a bucket */
+.tag-sub { margin-bottom: 0.35rem; }
+.tag-sub-label { font-size: 0.7rem; font-weight: 600; color: var(--dim); margin-bottom: 0.2rem; }
+
+/* Chips */
 .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.chip { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-family: var(--mono); font-weight: 500; }
-.bucket-blocker .chip { background: rgba(239,68,68,0.15); color: var(--critical); }
-.bucket-metadata .chip { background: rgba(249,115,22,0.15); color: var(--error); }
-.bucket-optimization .chip { background: rgba(100,116,139,0.15); color: var(--info); }
+.chip {
+  display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+  font-size: 0.7rem; font-family: var(--mono); font-weight: 500;
+}
+.chip-error { background: rgba(249,115,22,0.15); color: var(--error); }
+.chip-warning { background: rgba(234,179,8,0.15); color: var(--warning); }
+.chip-info { background: rgba(100,116,139,0.15); color: var(--info); }
+.chip-critical { background: rgba(239,68,68,0.15); color: var(--critical); }
 
 /* Empty state */
 .empty { text-align: center; padding: 3rem 1rem; color: var(--dim); font-style: italic; }
@@ -313,41 +335,96 @@ h2 {
     </div>
   </div>
   <div class="track-expand">
-    {% set blockers = track.issues | selectattr('bucket', 'equalto', 'blocker') | list %}
-    {% set metadata = track.issues | selectattr('bucket', 'equalto', 'metadata') | list %}
-    {% set optimizations = track.issues | selectattr('bucket', 'equalto', 'optimization') | list %}
-    {% if blockers or metadata or optimizations %}
-    <div class="buckets">
-      {% if blockers %}
-      <div class="bucket bucket-blocker">
-        <h4>Blockers</h4>
+    {% set classified = classify_track_issues(track) %}
+    {% if track.issues %}
+    <div class="expand-inner">
+
+      {# ── Track Issues (non-tag) ── #}
+      {% if classified.track_issues %}
+      <div class="issue-section">
+        <div class="issue-section-title">Track Issues</div>
         <div class="chips">
-          {% for i in blockers %}
-          <span class="chip" title="{{ i.description }}">{{ i.issue_type }}</span>
+          {% for i in classified.track_issues %}
+          <span class="chip chip-{{ i.severity }}" title="{{ i.description }}">{{ i.issue_type }}</span>
           {% endfor %}
         </div>
       </div>
       {% endif %}
-      {% if metadata %}
-      <div class="bucket bucket-metadata">
-        <h4>Metadata Fixes</h4>
-        <div class="chips">
-          {% for i in metadata %}
-          <span class="chip" title="{{ i.description }}">{{ i.field or i.issue_type }}</span>
-          {% endfor %}
+
+      {# ── Tag Issues ── #}
+      {% if classified.has_tag_issues %}
+      <div class="issue-section">
+        <div class="issue-section-title">Tag Issues</div>
+
+        {# Required Fixes (error) #}
+        {% set req = classified.tag_buckets.required %}
+        {% if req.missing or req.invalid %}
+        <div class="sev-bucket sev-bucket-error">
+          <h4>Required Fixes</h4>
+          {% if req.missing %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Missing Tags</div>
+            <div class="chips">{% for f in req.missing %}<span class="chip chip-error">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+          {% if req.invalid %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Invalid Tags</div>
+            <div class="chips">{% for f in req.invalid %}<span class="chip chip-error">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
         </div>
+        {% endif %}
+
+        {# Recommended Fixes (warning) #}
+        {% set rec = classified.tag_buckets.recommended %}
+        {% if rec.missing or rec.invalid or rec.encoding %}
+        <div class="sev-bucket sev-bucket-warning">
+          <h4>Recommended Fixes</h4>
+          {% if rec.missing %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Missing Tags</div>
+            <div class="chips">{% for f in rec.missing %}<span class="chip chip-warning">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+          {% if rec.invalid %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Invalid Tags</div>
+            <div class="chips">{% for f in rec.invalid %}<span class="chip chip-warning">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+          {% if rec.encoding %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Encoding Suspect</div>
+            <div class="chips">{% for f in rec.encoding %}<span class="chip chip-warning">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {# Possible Improvements (info) #}
+        {% set imp = classified.tag_buckets.improvement %}
+        {% if imp.missing or imp.invalid %}
+        <div class="sev-bucket sev-bucket-info">
+          <h4>Possible Improvements</h4>
+          {% if imp.missing %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Missing Tags</div>
+            <div class="chips">{% for f in imp.missing %}<span class="chip chip-info">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+          {% if imp.invalid %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Invalid Tags</div>
+            <div class="chips">{% for f in imp.invalid %}<span class="chip chip-info">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
       </div>
       {% endif %}
-      {% if optimizations %}
-      <div class="bucket bucket-optimization">
-        <h4>Optimizations</h4>
-        <div class="chips">
-          {% for i in optimizations %}
-          <span class="chip" title="{{ i.description }}">{{ i.field or i.issue_type }}</span>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
+
     </div>
     {% endif %}
   </div>
