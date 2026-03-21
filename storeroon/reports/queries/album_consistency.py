@@ -96,27 +96,45 @@ WHERE f.status = 'ok'
 """
 
 # Track numbering data for an album directory.
+# Fetches all aliases for totaltracks (TRACKTOTAL, TOTALTRACKS) and
+# totaldiscs (DISCTOTAL, TOTALDISCS, DISCS) so the resolver can pick
+# the canonical value with the right priority.
 _TRACK_NUMBERING_SQL = """
 SELECT
     rt_tn.file_id,
     rt_tn.tag_value AS tracknumber,
     rt_dn.tag_value AS discnumber,
-    rt_tt.tag_value AS totaltracks,
-    rt_td.tag_value AS totaldiscs
+    rt_tracktotal.tag_value  AS tracktotal,
+    rt_totaltracks.tag_value AS totaltracks,
+    rt_disctotal.tag_value   AS disctotal,
+    rt_totaldiscs.tag_value  AS totaldiscs,
+    rt_discs.tag_value       AS discs
 FROM raw_tags rt_tn
 JOIN files f ON f.id = rt_tn.file_id
 LEFT JOIN raw_tags rt_dn
     ON rt_dn.file_id = rt_tn.file_id
    AND rt_dn.tag_key_upper = 'DISCNUMBER'
    AND rt_dn.tag_index = 0
-LEFT JOIN raw_tags rt_tt
-    ON rt_tt.file_id = rt_tn.file_id
-   AND rt_tt.tag_key_upper = 'TOTALTRACKS'
-   AND rt_tt.tag_index = 0
-LEFT JOIN raw_tags rt_td
-    ON rt_td.file_id = rt_tn.file_id
-   AND rt_td.tag_key_upper = 'TOTALDISCS'
-   AND rt_td.tag_index = 0
+LEFT JOIN raw_tags rt_tracktotal
+    ON rt_tracktotal.file_id = rt_tn.file_id
+   AND rt_tracktotal.tag_key_upper = 'TRACKTOTAL'
+   AND rt_tracktotal.tag_index = 0
+LEFT JOIN raw_tags rt_totaltracks
+    ON rt_totaltracks.file_id = rt_tn.file_id
+   AND rt_totaltracks.tag_key_upper = 'TOTALTRACKS'
+   AND rt_totaltracks.tag_index = 0
+LEFT JOIN raw_tags rt_disctotal
+    ON rt_disctotal.file_id = rt_tn.file_id
+   AND rt_disctotal.tag_key_upper = 'DISCTOTAL'
+   AND rt_disctotal.tag_index = 0
+LEFT JOIN raw_tags rt_totaldiscs
+    ON rt_totaldiscs.file_id = rt_tn.file_id
+   AND rt_totaldiscs.tag_key_upper = 'TOTALDISCS'
+   AND rt_totaldiscs.tag_index = 0
+LEFT JOIN raw_tags rt_discs
+    ON rt_discs.file_id = rt_tn.file_id
+   AND rt_discs.tag_key_upper = 'DISCS'
+   AND rt_discs.tag_index = 0
 WHERE f.status = 'ok'
   AND SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) = ?
   AND rt_tn.tag_key_upper = 'TRACKNUMBER'
@@ -134,6 +152,8 @@ def _safe_int(value: str | None) -> int | None:
     if value is None:
         return None
     v = value.strip()
+    if not v:
+        return None
     # Handle legacy "N/T" tracknumber format — extract N.
     if "/" in v:
         parts = v.split("/", 1)
@@ -142,6 +162,33 @@ def _safe_int(value: str | None) -> int | None:
         return int(v)
     except (ValueError, OverflowError):
         return None
+
+
+def _resolve_totaltracks(tracktotal: str | None, totaltracks: str | None) -> int | None:
+    """Resolve the declared total tracks from aliases.
+
+    Priority: TRACKTOTAL (canonical) > TOTALTRACKS (alias).
+    """
+    val = _safe_int(tracktotal)
+    if val is not None:
+        return val
+    return _safe_int(totaltracks)
+
+
+def _resolve_totaldiscs(
+    disctotal: str | None, totaldiscs: str | None, discs: str | None
+) -> int | None:
+    """Resolve the declared total discs from aliases.
+
+    Priority: DISCTOTAL (canonical) > TOTALDISCS (alias) > DISCS (alias).
+    """
+    val = _safe_int(disctotal)
+    if val is not None:
+        return val
+    val = _safe_int(totaldiscs)
+    if val is not None:
+        return val
+    return _safe_int(discs)
 
 
 def _check_field_consistency(
@@ -223,8 +270,11 @@ def _check_track_numbering(
     for r in rows:
         tn = _safe_int(r["tracknumber"])
         dn = _safe_int(r["discnumber"])
-        tt = _safe_int(r["totaltracks"])
-        td = _safe_int(r["totaldiscs"])
+
+        # Resolve totaltracks: TRACKTOTAL > TOTALTRACKS
+        tt = _resolve_totaltracks(r["tracktotal"], r["totaltracks"])
+        # Resolve totaldiscs: DISCTOTAL > TOTALDISCS > DISCS
+        td = _resolve_totaldiscs(r["disctotal"], r["totaldiscs"], r["discs"])
 
         # Default disc number to 1 if not specified.
         disc = dn if dn is not None else 1
