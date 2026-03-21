@@ -335,6 +335,11 @@ def full_data(
     recommended_tags = _build_tag_bars(conn, tags_config.recommended, total_files, encoding_counts)
     other_tags = _build_tag_bars(conn, tags_config.other, total_files, encoding_counts)
 
+    # Alias consistency
+    from storeroon.reports.queries.tag_coverage import _alias_usage
+    canonical_keys = frozenset(tags_config.required + tags_config.recommended)
+    alias_consistency = _alias_usage(conn, tags_config.aliases, canonical_keys)
+
     return CollectionIssuesFullData(
         total_albums=total_albums,
         total_files=total_files,
@@ -343,4 +348,5 @@ def full_data(
         required_tags=required_tags,
         recommended_tags=recommended_tags,
         other_tags=other_tags,
+        alias_consistency=alias_consistency,
     )

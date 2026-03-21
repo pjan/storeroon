@@ -2004,6 +2004,25 @@ def build_collection_issues_sections(data: CollectionIssuesFullData) -> list[dic
                 _section(group_name, text_blocks=[_text(bars_html)])
             )
 
+    # Alias Consistency
+    if data.alias_consistency:
+        alias_bars = "".join(
+            _two_seg_bar(
+                f"{row.canonical_key} \u2194 {row.alias_key}",
+                row.consistency_pct,
+                round((100.0 - row.consistency_pct) / 100.0 * data.total_files) if data.total_files else 0,
+                data.total_files,
+            )
+            for row in data.alias_consistency
+        )
+        sections.append(
+            _section(
+                "Alias Consistency",
+                note="For files with the canonical tag, shows what % also have the alias tag set to the same value. Target: 100%.",
+                text_blocks=[_text(alias_bars)],
+            )
+        )
+
     return sections
 
 

@@ -650,6 +650,7 @@ class CollectionIssuesFullData:
     required_tags: list[TagBar]
     recommended_tags: list[TagBar]
     other_tags: list[TagBar]
+    alias_consistency: list[AliasUsageRow]
 
 
 # =========================================================================
