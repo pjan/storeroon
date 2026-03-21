@@ -219,7 +219,7 @@ h2 {
 /* Expanded panel */
 .track-expand { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
 .track.open .track-expand { max-height: 2000px; }
-.expand-inner { padding: 0.5rem 0 0.75rem 1rem; }
+.expand-inner { padding: 0.5rem 1rem 0.75rem 1rem; }
 
 /* Issue section containers */
 .issue-section { margin-bottom: 0.75rem; }
@@ -229,21 +229,33 @@ h2 {
 }
 
 /* Severity buckets — full width */
-.sev-bucket { border-radius: 8px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
+.sev-bucket { border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
 .sev-bucket-error { background: var(--error-bg); border-left: 3px solid var(--error); }
 .sev-bucket-warning { background: var(--warning-bg); border-left: 3px solid var(--warning); }
 .sev-bucket-info { background: var(--info-bg); border-left: 3px solid var(--info); }
 .sev-bucket h4 {
-  margin: 0 0 0.35rem 0; font-size: 0.75rem; font-weight: 700;
+  margin: 0 0 0.5rem 0; font-size: 0.75rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.04em;
 }
 .sev-bucket-error h4 { color: var(--error); }
 .sev-bucket-warning h4 { color: var(--warning); }
 .sev-bucket-info h4 { color: var(--info); }
 
-/* Sub-sections within a bucket */
-.tag-sub { margin-bottom: 0.35rem; }
-.tag-sub-label { font-size: 0.7rem; font-weight: 600; color: var(--dim); margin-bottom: 0.2rem; }
+/* Sub-section bubbles within a severity bucket */
+.tag-sub {
+  background: rgba(255,255,255,0.45);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.4rem;
+}
+@media (prefers-color-scheme: dark) {
+  .tag-sub { background: rgba(0,0,0,0.2); }
+}
+.tag-sub:last-child { margin-bottom: 0; }
+.tag-sub-label {
+  font-size: 0.7rem; font-weight: 600; color: var(--dim);
+  margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.03em;
+}
 
 /* Chips */
 .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
@@ -395,7 +407,7 @@ h2 {
           {% endif %}
           {% if rec.encoding %}
           <div class="tag-sub">
-            <div class="tag-sub-label">Encoding Suspect</div>
+            <div class="tag-sub-label">Incorrectly Encoded Tags</div>
             <div class="chips">{% for f in rec.encoding %}<span class="chip chip-warning">{{ f }}</span>{% endfor %}</div>
           </div>
           {% endif %}
