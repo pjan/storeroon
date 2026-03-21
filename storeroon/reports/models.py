@@ -149,6 +149,76 @@ class OverviewSummaryData:
 
 
 # =========================================================================
+# Report 1b — Collection overview 2 (with scan issues)
+# =========================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class AlbumBreakdown2:
+    """Album folder with issue counts."""
+
+    album_dir: str
+    display_name: str  # "{YYYY} - {album} [{catalognumber}]"
+    track_count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+    critical_count: int
+    error_count: int
+    warning_count: int
+    info_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseTypeBreakdown2:
+    """Release type with aggregated issue counts."""
+
+    release_type: str
+    album_count: int
+    track_count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+    critical_count: int
+    error_count: int
+    warning_count: int
+    info_count: int
+    albums: list[AlbumBreakdown2]
+
+
+@dataclass(frozen=True, slots=True)
+class ArtistBreakdown2:
+    """Artist with aggregated issue counts."""
+
+    artist: str
+    album_count: int
+    track_count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+    critical_count: int
+    error_count: int
+    warning_count: int
+    info_count: int
+    release_types: list[ReleaseTypeBreakdown2]
+
+
+@dataclass(frozen=True, slots=True)
+class IssuesTotals:
+    """Aggregate issue counts for the dashboard."""
+
+    albums_with_issues: int
+    files_with_issues: int
+    total_issues: int
+
+
+@dataclass(frozen=True, slots=True)
+class Overview2FullData:
+    """Complete data for collection overview 2."""
+
+    totals: OverviewTotals
+    issues_totals: IssuesTotals
+    by_artist: list[ArtistBreakdown2]
+
+
+# =========================================================================
 # Report 2 — Audio technical quality
 # =========================================================================
 

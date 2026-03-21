@@ -291,6 +291,42 @@ def _cmd_overview(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_overview2(args: argparse.Namespace) -> int:
+    """Execute ``report overview2``."""
+    conf = _load_config(args)
+    if conf is None:
+        return 1
+
+    conn = _open_db(conf)
+    if conn is None:
+        return 0
+
+    if _check_empty(conn):
+        output_console.print(
+            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
+        )
+        conn.close()
+        return 0
+
+    from storeroon.reports.queries import overview2
+
+    data = overview2.full_data(conn)
+    fmt = _get_output_format(args)
+
+    if fmt == "terminal":
+        # Reuse the overview terminal renderer for now (no terminal-specific overview2 renderer)
+        from storeroon.reports.renderers.terminal import render_overview
+        # For terminal, just show the basic overview — the enriched view is HTML-focused
+        from storeroon.reports.queries import overview as ov1
+        data_v1 = ov1.full_data(conn)
+        render_overview(output_console, data_v1)
+    else:
+        _write_json(args, conf, "overview2", data)
+
+    conn.close()
+    return 0
+
+
 def _cmd_technical(args: argparse.Namespace) -> int:
     """Execute ``report technical``."""
     conf = _load_config(args)
@@ -717,6 +753,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         issues,
         lyrics,
         overview,
+        overview2,
         replaygain,
         tag_coverage,
         tag_quality,
@@ -727,6 +764,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
     # (label, report_name, query_fn_call)
     report_specs: list[tuple[str, str, Callable[[], object]]] = [
         ("Overview", "overview", lambda: overview.full_data(conn)),
+        ("Overview 2", "overview2", lambda: overview2.full_data(conn)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
         ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn, conf.tags)),
@@ -748,7 +786,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
     ]
 
     for i, (label, name, query_fn) in enumerate(report_specs, 1):
-        console.print(f"[dim]  {i:2d}/11  {label}…[/dim]")
+        console.print(f"[dim]  {i:2d}/{len(report_specs)}  {label}…[/dim]")
         try:
             data = query_fn()
             path = write_report(output_dir, name, data)
@@ -770,6 +808,7 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "all": _cmd_all,
     "summary": _cmd_summary,
     "overview": _cmd_overview,
+    "overview2": _cmd_overview2,
     "technical": _cmd_technical,
     "tags": _cmd_tags,
     "tag-quality": _cmd_tag_quality,
@@ -879,6 +918,14 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     _add_output_args(p_overview)
     _add_config_arg(p_overview)
+
+    # --- overview2 ---
+    p_overview2 = report_subs.add_parser(
+        "overview2",
+        help="Collection overview with scan issues per album",
+    )
+    _add_output_args(p_overview2)
+    _add_config_arg(p_overview2)
 
     # --- technical ---
     p_technical = report_subs.add_parser(

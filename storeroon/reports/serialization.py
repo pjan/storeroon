@@ -20,6 +20,7 @@ from storeroon.reports.models import (
     GenresFullData,
     IssuesFullData,
     LyricsFullData,
+    Overview2FullData,
     OverviewFullData,
     ReplayGainFullData,
     TagCoverageFullData,
@@ -35,6 +36,7 @@ T = TypeVar("T")
 
 REPORT_DATA_CLASSES: dict[str, type] = {
     "overview": OverviewFullData,
+    "overview2": Overview2FullData,
     "technical": TechnicalFullData,
     "tags": TagCoverageFullData,
     "tag_quality": TagQualityFullData,

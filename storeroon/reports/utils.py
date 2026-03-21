@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 REPORT_NAMES: tuple[str, ...] = (
     "overview",
+    "overview2",
     "technical",
     "tags",
     "tag_quality",

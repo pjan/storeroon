@@ -16,12 +16,14 @@ from typing import Any
 from storeroon.reports.models import (
     AlbumConsistencyFullData,
     ArtistBreakdown,
+    ArtistBreakdown2,
     ArtistsFullData,
     BucketCount,
     DuplicatesFullData,
     GenresFullData,
     IssuesFullData,
     LyricsFullData,
+    Overview2FullData,
     OverviewFullData,
     ReplayGainFullData,
     TagCoverageFullData,
@@ -45,6 +47,7 @@ from storeroon.reports.utils import (
 
 REPORT_TITLES: dict[str, str] = {
     "overview": "Collection Overview",
+    "overview2": "Collection Overview 2",
     "technical": "Audio Technical Quality",
     "tags": "Tag Coverage & Key Inventory",
     "tag_quality": "Tag Quality & Integrity",
@@ -1824,8 +1827,193 @@ def build_replaygain_sections(data: ReplayGainFullData) -> list[dict[str, Any]]:
 # Section builder registry
 # ---------------------------------------------------------------------------
 
+# =========================================================================
+# Report 1b — Collection overview 2 (with scan issues)
+# =========================================================================
+
+
+def _severity_class_from_counts(critical: int, error: int, warning: int, info: int) -> str:
+    """Return CSS severity class from issue counts."""
+    if critical > 0:
+        return "sev-critical"
+    if error > 0:
+        return "sev-error"
+    if warning > 0:
+        return "sev-warning"
+    if info > 0:
+        return "sev-info"
+    return "sev-clean"
+
+
+def _issue_badges_html(critical: int, error: int, warning: int, info: int) -> str:
+    """Build severity badge HTML, hiding zero counts."""
+    badges: list[str] = []
+    if critical > 0:
+        badges.append(f'<span class="badge badge-critical">{critical}</span>')
+    if error > 0:
+        badges.append(f'<span class="badge badge-error">{error}</span>')
+    if warning > 0:
+        badges.append(f'<span class="badge badge-warning">{warning}</span>')
+    if info > 0:
+        badges.append(f'<span class="badge badge-info">{info}</span>')
+    return "".join(badges)
+
+
+def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
+    """Build the overview2 hierarchy with issue indicators."""
+    from urllib.parse import quote
+
+    style = (
+        "<style>"
+        ".ov2-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;"
+        "cursor:pointer;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}"
+        ".ov2-row:hover{background:var(--bg-alt)}"
+        ".ov2-indicator{width:4px;border-radius:2px;align-self:stretch;min-height:1.5rem;flex-shrink:0}"
+        ".ov2-name{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".ov2-name strong{font-weight:600}"
+        ".ov2-right{display:flex;gap:0.35rem;flex-shrink:0;align-items:center}"
+        ".ov2-stat{font-size:0.7rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:4px;"
+        "background:var(--bg-alt);color:var(--dim);font-variant-numeric:tabular-nums;"
+        "min-width:4.5rem;text-align:right;display:inline-block}"
+        ".ov2-issue-badges{display:flex;gap:0.25rem;margin-left:0.5rem}"
+        ".ov2-children{display:none;padding-left:1.5rem}"
+        ".ov2-children.open{display:block}"
+        ".ov2-dim{color:var(--dim);font-size:0.85rem}"
+        "a.ov2-row{text-decoration:none;color:inherit}"
+        ".sev-critical{background:var(--critical)}"
+        ".sev-error{background:var(--error)}"
+        ".sev-warning{background:var(--warning)}"
+        ".sev-info{background:var(--info)}"
+        ".sev-clean{background:var(--clean)}"
+        ".badge{font-size:0.7rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;line-height:1.3}"
+        ".badge-critical{background:var(--critical-bg,var(--red-bg));color:var(--critical,var(--red))}"
+        ".badge-error{background:var(--error-bg,var(--red-bg));color:var(--error,var(--red))}"
+        ".badge-warning{background:var(--warning-bg,var(--yellow-bg));color:var(--warning,var(--yellow))}"
+        ".badge-info{background:var(--info-bg,var(--bg-alt));color:var(--info,var(--dim))}"
+        "</style>"
+    )
+
+    rows: list[str] = [style]
+    _counter = [0]
+
+    def _uid() -> str:
+        _counter[0] += 1
+        return f"ov2-{_counter[0]}"
+
+    def _stats(album_count: int, track_count: int, size: int, duration: float) -> str:
+        return (
+            f'<span class="ov2-stat">{fmt_count(album_count)} albums</span>'
+            f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
+            f'<span class="ov2-stat">{fmt_size_gb(size)}</span>'
+            f'<span class="ov2-stat">{fmt_duration_hms(duration)}</span>'
+        )
+
+    def _album_stats(track_count: int, size: int, duration: float) -> str:
+        return (
+            f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
+            f'<span class="ov2-stat">{fmt_size_gb(size)}</span>'
+            f'<span class="ov2-stat">{fmt_duration_hms(duration)}</span>'
+        )
+
+    for a in artists:
+        aid = _uid()
+        ibadges = _issue_badges_html(a.critical_count, a.error_count, a.warning_count, a.info_count)
+        sev = _severity_class_from_counts(a.critical_count, a.error_count, a.warning_count, a.info_count)
+        rows.append(
+            f'<div class="ov2-row" onclick="toggleOv2(\'{aid}\')">'
+            f'<div class="ov2-indicator {sev}"></div>'
+            f'<div class="ov2-name"><strong>{a.artist}</strong></div>'
+            f'<div class="ov2-right">{_stats(a.album_count, a.track_count, a.total_size_bytes, a.total_duration_seconds)}'
+            f'<div class="ov2-issue-badges">{ibadges}</div></div>'
+            f"</div>"
+            f'<div class="ov2-children" id="{aid}">'
+        )
+
+        for rt in a.release_types:
+            rid = _uid()
+            rt_badges = _issue_badges_html(rt.critical_count, rt.error_count, rt.warning_count, rt.info_count)
+            rt_sev = _severity_class_from_counts(rt.critical_count, rt.error_count, rt.warning_count, rt.info_count)
+            rows.append(
+                f'<div class="ov2-row" onclick="toggleOv2(\'{rid}\'); event.stopPropagation()">'
+                f'<div class="ov2-indicator {rt_sev}"></div>'
+                f'<div class="ov2-name ov2-dim">{rt.release_type}</div>'
+                f'<div class="ov2-right">{_stats(rt.album_count, rt.track_count, rt.total_size_bytes, rt.total_duration_seconds)}'
+                f'<div class="ov2-issue-badges">{rt_badges}</div></div>'
+                f"</div>"
+                f'<div class="ov2-children" id="{rid}">'
+            )
+
+            for alb in rt.albums:
+                encoded_dir = quote(alb.album_dir, safe="")
+                link = f"/report/album-issues?dir={encoded_dir}"
+                alb_badges = _issue_badges_html(alb.critical_count, alb.error_count, alb.warning_count, alb.info_count)
+                alb_sev = _severity_class_from_counts(alb.critical_count, alb.error_count, alb.warning_count, alb.info_count)
+                rows.append(
+                    f'<a class="ov2-row" href="{link}" onclick="event.stopPropagation()">'
+                    f'<div class="ov2-indicator {alb_sev}"></div>'
+                    f'<div class="ov2-name">{alb.display_name}</div>'
+                    f'<div class="ov2-right">{_album_stats(alb.track_count, alb.total_size_bytes, alb.total_duration_seconds)}'
+                    f'<div class="ov2-issue-badges">{alb_badges}</div></div>'
+                    f"</a>"
+                )
+
+            rows.append("</div>")
+        rows.append("</div>")
+
+    rows.append("""<script>
+function toggleOv2(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+</script>""")
+
+    return "\n".join(rows)
+
+
+def build_overview2_sections(data: Overview2FullData) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+
+    t = data.totals
+    it = data.issues_totals
+    sections.append(
+        _section(
+            "Collection Totals",
+            summary_cards=[
+                _card(fmt_count(t.total_album_artists), "Album Artists"),
+                _card(fmt_count(t.total_albums), "Albums"),
+                _card(fmt_count(t.total_tracks), "Tracks"),
+                _card(fmt_size_gb(t.total_size_bytes), "Size"),
+                _card(fmt_duration_hms(t.total_duration_seconds), "Duration"),
+            ],
+        )
+    )
+
+    sections.append(
+        _section(
+            "Scan Issues",
+            summary_cards=[
+                _card(fmt_count(it.albums_with_issues), "Albums with Issues"),
+                _card(fmt_count(it.files_with_issues), "Files with Issues"),
+                _card(fmt_count(it.total_issues), "Total Issues"),
+            ],
+        )
+    )
+
+    if data.by_artist:
+        hierarchy_html = _build_overview2_html(data.by_artist)
+        sections.append(
+            _section(
+                "Collection Breakdown",
+                text_blocks=[_text(hierarchy_html)],
+            )
+        )
+
+    return sections
+
+
 SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "overview": build_overview_sections,
+    "overview2": build_overview2_sections,
     "technical": build_technical_sections,
     "tags": build_tag_coverage_sections,
     "tag_quality": build_tag_quality_sections,

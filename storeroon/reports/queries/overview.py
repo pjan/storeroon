@@ -75,10 +75,10 @@ WHERE f.status = 'ok'
 def _make_display_name(
     original_date: str | None, album: str, catalog_number: str | None
 ) -> str:
-    """Build display string: '{originaldate} - {album} [{catalognumber}]'."""
+    """Build display string: '{YYYY} - {album} [{catalognumber}]'."""
     parts: list[str] = []
     if original_date and original_date.strip():
-        parts.append(original_date.strip())
+        parts.append(original_date.strip()[:4])
     parts.append(album)
     name = " - ".join(parts)
     if catalog_number and catalog_number.strip():
