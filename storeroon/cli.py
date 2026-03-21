@@ -38,9 +38,7 @@ from storeroon import config as cfg
 from storeroon.db import MigrationError, connect, migrate
 from storeroon.reports.cli import build_report_parser, dispatch_report
 from storeroon.scanner import (
-    DuplicateStats,
     ImportStats,
-    detect_duplicates,
     import_batch,
     walk_collection,
 )
@@ -83,7 +81,6 @@ def _setup_logging(level: str) -> None:
 
 def _print_scan_summary(
     total_import: ImportStats,
-    dup_stats: DuplicateStats,
     elapsed: float,
     dry_run: bool,
 ) -> None:
@@ -105,10 +102,6 @@ def _print_scan_summary(
     table.add_row("Files unreadable", f"{total_import.files_unreadable:,}")
     table.add_row("Tags imported", f"{total_import.tags_imported:,}")
     table.add_row("Issues raised", f"{total_import.issues_raised:,}")
-    table.add_section()
-    table.add_row("Duplicate groups", f"{dup_stats.groups_found:,}")
-    table.add_row("Duplicate files", f"{dup_stats.files_affected:,}")
-    table.add_row("Duplicate issues raised", f"{dup_stats.issues_raised:,}")
     table.add_section()
 
     mins, secs = divmod(elapsed, 60)
@@ -275,15 +268,10 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     console.print()
 
-    # --- Phase 2: Duplicate detection ------------------------------------
-    console.print("[bold cyan]Phase 2:[/bold cyan] Detecting duplicates…")
-
-    dup_stats = detect_duplicates(conn, dry_run=dry_run)
-
     elapsed = time.monotonic() - t0
 
     # --- Summary ----------------------------------------------------------
-    _print_scan_summary(total_stats, dup_stats, elapsed, dry_run)
+    _print_scan_summary(total_stats, elapsed, dry_run)
 
     conn.close()
     return 0

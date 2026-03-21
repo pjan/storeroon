@@ -19,7 +19,6 @@ from storeroon.reports.models import (
     ArtistBreakdown2,
     ArtistsFullData,
     BucketCount,
-    DuplicatesFullData,
     GenresFullData,
     IssuesFullData,
     LyricsFullData,
@@ -52,7 +51,6 @@ REPORT_TITLES: dict[str, str] = {
     "tags": "Tag Coverage & Key Inventory",
     "tag_quality": "Tag Quality & Integrity",
     "album_consistency": "Intra-Album Consistency",
-    "duplicates": "Duplicates",
     "issues": "Scan Issues",
     "artists": "Artist Name Consistency",
     "genres": "Genre Analysis",
@@ -928,133 +926,6 @@ def build_album_consistency_sections(
             _section(
                 "Result",
                 text_blocks=[_text("No consistency violations found.", cls="dim")],
-            )
-        )
-
-    return sections
-
-
-# =========================================================================
-# Report 8 — Duplicates
-# =========================================================================
-
-
-def build_duplicates_sections(data: DuplicatesFullData) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-
-    sections.append(
-        _section(
-            "Duplicates",
-            summary_cards=[
-                _card(fmt_count(len(data.exact)), "Exact Groups"),
-                _card(fmt_count(len(data.mbid)), "MBID Groups"),
-                _card(fmt_count(len(data.probable)), "Probable Groups"),
-            ],
-        )
-    )
-
-    if data.exact:
-        exact_rows: list[list[dict[str, Any]]] = []
-        for g in data.exact:
-            paths_str = "<br>".join(g.paths[:10])
-            if len(g.paths) > 10:
-                paths_str += f"<br>\u2026 +{len(g.paths) - 10} more"
-            exact_rows.append(
-                [
-                    _cell(g.checksum[:20] + "\u2026", cls="mono"),
-                    _cell(g.copy_count, cls="num"),
-                    _cell(paths_str, cls="path"),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Exact Duplicates (SHA-256) \u2014 {len(data.exact)} group(s)",
-                tables=[
-                    _table(
-                        None,
-                        [_hdr("Checksum"), _hdr("Copies", "num"), _hdr("Paths")],
-                        exact_rows,
-                    )
-                ],
-            )
-        )
-    else:
-        sections.append(
-            _section(
-                "Exact Duplicates",
-                text_blocks=[_text("No exact duplicates found.", cls="dim")],
-            )
-        )
-
-    if data.mbid:
-        mbid_rows: list[list[dict[str, Any]]] = []
-        for g in data.mbid:
-            same_text = "Yes" if g.same_directory else "No"
-            same_cls = "severity-error" if g.same_directory else "severity-warning"
-            file_details = "<br>".join(
-                f"{f.path} [{f.album} / {f.date}]" for f in g.files[:10]
-            )
-            if len(g.files) > 10:
-                file_details += f"<br>\u2026 +{len(g.files) - 10} more"
-            mbid_rows.append(
-                [
-                    _cell(g.mbid[:20] + "\u2026", cls="mono"),
-                    _cell(g.file_count, cls="num"),
-                    _cell(same_text, cls=same_cls),
-                    _cell(file_details, cls="path"),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Same Recording Duplicates (MUSICBRAINZ_TRACKID) \u2014 {len(data.mbid)} group(s)",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("MBID"),
-                            _hdr("Files", "num"),
-                            _hdr("Same Dir?"),
-                            _hdr("Details"),
-                        ],
-                        mbid_rows,
-                    )
-                ],
-            )
-        )
-
-    if data.probable:
-        prob_rows: list[list[dict[str, Any]]] = []
-        for g in data.probable:
-            paths_str = "<br>".join(g.paths[:5])
-            if len(g.paths) > 5:
-                paths_str += f"<br>\u2026 +{len(g.paths) - 5} more"
-            prob_rows.append(
-                [
-                    _cell(g.albumartist),
-                    _cell(g.album),
-                    _cell(g.discnumber, cls="num"),
-                    _cell(g.tracknumber, cls="num"),
-                    _cell(g.file_count, cls="num"),
-                    _cell(paths_str, cls="path"),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Probable Duplicates (by position) \u2014 {len(data.probable)} group(s)",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("Album Artist"),
-                            _hdr("Album"),
-                            _hdr("Disc", "num"),
-                            _hdr("Track", "num"),
-                            _hdr("Files", "num"),
-                            _hdr("Paths"),
-                        ],
-                        prob_rows,
-                    )
-                ],
             )
         )
 
@@ -2019,7 +1890,6 @@ SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "tags": build_tag_coverage_sections,
     "tag_quality": build_tag_quality_sections,
     "album_consistency": build_album_consistency_sections,
-    "duplicates": build_duplicates_sections,
     "issues": build_issues_sections,
     "artists": build_artists_sections,
     "genres": build_genres_sections,

@@ -21,7 +21,6 @@ REPORT_NAMES: tuple[str, ...] = (
     "tags",
     "tag_quality",
     "album_consistency",
-    "duplicates",
     "issues",
     "artists",
     "genres",

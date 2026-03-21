@@ -21,8 +21,6 @@ from storeroon.reports.models import (
     ArtistsFullData,
     ArtistsSummaryData,
     BucketCount,
-    DuplicatesFullData,
-    DuplicatesSummaryData,
     GenresFullData,
     GenresSummaryData,
     IssuesFullData,
@@ -780,96 +778,6 @@ def render_album_consistency_summary(
 
 
 # =========================================================================
-# Report 8 — Duplicates
-# =========================================================================
-
-
-def render_duplicates(console: Console, data: DuplicatesFullData) -> None:
-    """Render the full duplicates report."""
-    _section_heading(console, "Duplicates")
-
-    # Pass 1: Exact duplicates.
-    _subsection_heading(
-        console,
-        f"Exact Duplicates (SHA-256) — {len(data.exact)} group(s)",
-    )
-    if data.exact:
-        for g in data.exact[:50]:
-            console.print(
-                f"  [red]Checksum:[/red] {g.checksum[:16]}… ({g.copy_count} copies)"
-            )
-            for p in g.paths:
-                console.print(f"    • {p}")
-        if len(data.exact) > 50:
-            console.print(f"[dim]  … and {len(data.exact) - 50} more groups[/dim]")
-    else:
-        console.print("  [green]No exact duplicates found.[/green]")
-
-    # Pass 2: Same recording (MBID).
-    _subsection_heading(
-        console,
-        f"Same Recording Duplicates (MUSICBRAINZ_TRACKID) — {len(data.mbid)} group(s)",
-    )
-    if data.mbid:
-        for g in data.mbid[:30]:
-            same_str = (
-                "[red]same dir[/red]"
-                if g.same_directory
-                else "[yellow]different dirs[/yellow]"
-            )
-            console.print(f"  MBID: {g.mbid[:16]}… ({g.file_count} files, {same_str})")
-            for f in g.files:
-                console.print(f"    • {f.path}  [{f.album} / {f.date}]")
-        if len(data.mbid) > 30:
-            console.print(f"[dim]  … and {len(data.mbid) - 30} more groups[/dim]")
-    else:
-        console.print("  [green]No same-recording duplicates found.[/green]")
-
-    # Pass 3: Probable duplicates.
-    _subsection_heading(
-        console,
-        f"Probable Duplicates (by position) — {len(data.probable)} group(s)",
-    )
-    if data.probable:
-        prob_table = Table(show_header=True, header_style="bold")
-        prob_table.add_column("Album Artist")
-        prob_table.add_column("Album")
-        prob_table.add_column("Disc")
-        prob_table.add_column("Track")
-        prob_table.add_column("Files", justify="right")
-        prob_table.add_column("Paths", style="dim")
-
-        for g in data.probable[:50]:
-            paths = "\n".join(g.paths[:5])
-            if len(g.paths) > 5:
-                paths += f"\n… +{len(g.paths) - 5} more"
-            prob_table.add_row(
-                g.albumartist,
-                g.album,
-                g.discnumber,
-                g.tracknumber,
-                str(g.file_count),
-                paths,
-            )
-        if len(data.probable) > 50:
-            console.print(f"[dim]  … and {len(data.probable) - 50} more groups[/dim]")
-        console.print(prob_table)
-    else:
-        console.print("  [green]No probable duplicates found.[/green]")
-
-
-def render_duplicates_summary(console: Console, data: DuplicatesSummaryData) -> None:
-    """Render duplicates summary in summary mode."""
-    _subsection_heading(console, "🔁 Duplicates")
-    style_exact = "red" if data.exact_count > 0 else "green"
-    console.print(
-        f"  Exact (SHA-256): [{style_exact}]{data.exact_count} group(s)[/{style_exact}]"
-    )
-    console.print(f"  Same recording (MBID): {data.mbid_count} group(s)")
-    console.print(f"  Probable (by position): {data.probable_count} group(s)")
-
-
-# =========================================================================
 # Report 9 — Scan issues
 # =========================================================================
 
@@ -1529,7 +1437,6 @@ def render_master_summary(console: Console, summary: MasterSummary) -> None:
     if summary.album_consistency:
         render_album_consistency_summary(console, summary.album_consistency)
     if summary.duplicates:
-        render_duplicates_summary(console, summary.duplicates)
     if summary.issues:
         render_issues_summary(console, summary.issues)
     if summary.artists:

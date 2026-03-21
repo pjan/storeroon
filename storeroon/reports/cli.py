@@ -15,7 +15,6 @@ CLI structure::
     python -m storeroon report tag-formats   [--output ...] [--output-dir PATH] [--artist ARTIST]
     python -m storeroon report album-consistency [--output ...] [--output-dir PATH] [--artist ARTIST]
     python -m storeroon report ids           [--output ...] [--output-dir PATH] [--artist ARTIST]
-    python -m storeroon report duplicates    [--output ...] [--output-dir PATH]
     python -m storeroon report issues        [--output ...] [--output-dir PATH] [--min-severity ...]
     python -m storeroon report album-issues  ALBUM_DIR [--output ...] [--output-dir PATH]
     python -m storeroon report artists       [--output ...] [--output-dir PATH]
@@ -178,7 +177,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     from storeroon.reports.queries import (
         album_consistency,
         artists,
-        duplicates,
         genres,
         issues,
         lyrics,
@@ -218,11 +216,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         summary.album_consistency = album_consistency.summary_data(conn)
     except Exception as exc:
         log.warning("Album consistency summary failed: %s", exc)
-
-    try:
-        summary.duplicates = duplicates.summary_data(conn)
-    except Exception as exc:
-        log.warning("Duplicates summary failed: %s", exc)
 
     try:
         summary.issues = issues.summary_data(conn)
@@ -468,37 +461,6 @@ def _cmd_album_consistency(args: argparse.Namespace) -> int:
     conn.close()
     return 0
 
-
-def _cmd_duplicates(args: argparse.Namespace) -> int:
-    """Execute ``report duplicates``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import duplicates
-    from storeroon.reports.renderers.terminal import render_duplicates
-
-    data = duplicates.full_data(conn)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_duplicates(output_console, data)
-    else:
-        _write_json(args, conf, "duplicates", data)
-
-    conn.close()
-    return 0
 
 
 def _cmd_issues(args: argparse.Namespace) -> int:
@@ -748,7 +710,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
     from storeroon.reports.queries import (
         album_consistency,
         artists,
-        duplicates,
         genres,
         issues,
         lyrics,
@@ -773,7 +734,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
             "album_consistency",
             lambda: album_consistency.full_data(conn),
         ),
-        ("Duplicates", "duplicates", lambda: duplicates.full_data(conn)),
         ("Scan issues", "issues", lambda: issues.full_data(conn)),
         (
             "Artists",
@@ -813,7 +773,6 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "tags": _cmd_tags,
     "tag-quality": _cmd_tag_quality,
     "album-consistency": _cmd_album_consistency,
-    "duplicates": _cmd_duplicates,
     "issues": _cmd_issues,
     "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,
@@ -960,14 +919,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_output_args(p_album_consistency)
     _add_artist_args(p_album_consistency)
     _add_config_arg(p_album_consistency)
-
-    # --- duplicates ---
-    p_duplicates = report_subs.add_parser(
-        "duplicates",
-        help="Duplicate detection: exact, MBID, probable",
-    )
-    _add_output_args(p_duplicates)
-    _add_config_arg(p_duplicates)
 
     # --- issues ---
     p_issues = report_subs.add_parser(

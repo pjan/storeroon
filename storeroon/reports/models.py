@@ -480,71 +480,6 @@ class TagQualitySummaryData:
 
 
 # =========================================================================
-# Report 8 — Duplicates
-# =========================================================================
-
-
-@dataclass(frozen=True, slots=True)
-class ExactDuplicateGroup:
-    """A group of files sharing the same SHA-256 checksum."""
-
-    checksum: str
-    copy_count: int
-    paths: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class MbidDuplicateGroup:
-    """Files sharing the same MUSICBRAINZ_TRACKID."""
-
-    mbid: str
-    file_count: int
-    files: list[MbidDuplicateFile]
-    same_directory: bool
-
-
-@dataclass(frozen=True, slots=True)
-class MbidDuplicateFile:
-    """A file within an MBID duplicate group."""
-
-    path: str
-    album: str
-    date: str
-
-
-@dataclass(frozen=True, slots=True)
-class ProbableDuplicateGroup:
-    """Files sharing the same (ALBUMARTIST, ALBUM, DISCNUMBER, TRACKNUMBER)
-    but with different checksums."""
-
-    albumartist: str
-    album: str
-    discnumber: str
-    tracknumber: str
-    file_count: int
-    paths: list[str]
-    checksums: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class DuplicatesFullData:
-    """Complete data for the duplicates report."""
-
-    exact: list[ExactDuplicateGroup]
-    mbid: list[MbidDuplicateGroup]
-    probable: list[ProbableDuplicateGroup]
-
-
-@dataclass(frozen=True, slots=True)
-class DuplicatesSummaryData:
-    """Summary data for duplicates in the summary command."""
-
-    exact_count: int
-    mbid_count: int
-    probable_count: int
-
-
-# =========================================================================
 # Report 9 — Scan issues (Album-centric)
 # =========================================================================
 
@@ -893,7 +828,6 @@ class MasterSummary:
     tags: TagCoverageSummaryData | None = None
     tag_quality: TagQualitySummaryData | None = None
     album_consistency: AlbumConsistencySummaryData | None = None
-    duplicates: DuplicatesSummaryData | None = None
     issues: IssuesSummaryData | None = None
     artists: ArtistsSummaryData | None = None
     genres: GenresSummaryData | None = None
