@@ -278,6 +278,37 @@ def _cmd_overview(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_collection_issues(args: argparse.Namespace) -> int:
+    """Execute ``report collection-issues``."""
+    conf = _load_config(args)
+    if conf is None:
+        return 1
+
+    conn = _open_db(conf)
+    if conn is None:
+        return 0
+
+    if _check_empty(conn):
+        output_console.print(
+            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
+        )
+        conn.close()
+        return 0
+
+    from storeroon.reports.queries import collection_issues
+
+    data = collection_issues.full_data(conn, conf.tags)
+    fmt = _get_output_format(args)
+
+    if fmt == "terminal":
+        output_console.print("[yellow]Collection issues overview is HTML-only. Use --output json and storeroon serve.[/yellow]")
+    else:
+        _write_json(args, conf, "collection_issues", data)
+
+    conn.close()
+    return 0
+
+
 def _cmd_technical(args: argparse.Namespace) -> int:
     """Execute ``report technical``."""
     conf = _load_config(args)
@@ -636,6 +667,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         artists,
         genres,
         lyrics,
+        collection_issues,
         overview2,
         replaygain,
         tag_coverage,
@@ -647,6 +679,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
     # (label, report_name, query_fn_call)
     report_specs: list[tuple[str, str, Callable[[], object]]] = [
         ("Overview", "overview", lambda: overview2.full_data(conn)),
+        ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
         ("Tag quality", "tag_quality", lambda: tag_quality.full_data(conn, conf.tags)),
@@ -688,6 +721,7 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "all": _cmd_all,
     "summary": _cmd_summary,
     "overview": _cmd_overview,
+    "collection-issues": _cmd_collection_issues,
     "technical": _cmd_technical,
     "tags": _cmd_tags,
     "tag-quality": _cmd_tag_quality,
@@ -795,6 +829,14 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     _add_output_args(p_overview)
     _add_config_arg(p_overview)
+
+    # --- collection-issues ---
+    p_collection_issues = report_subs.add_parser(
+        "collection-issues",
+        help="Collection issues overview: album health, track health, tag quality bars",
+    )
+    _add_output_args(p_collection_issues)
+    _add_config_arg(p_collection_issues)
 
     # --- technical ---
     p_technical = report_subs.add_parser(

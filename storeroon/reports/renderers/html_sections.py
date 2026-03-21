@@ -19,12 +19,14 @@ from storeroon.reports.models import (
     ArtistBreakdown2,
     ArtistsFullData,
     BucketCount,
+    CollectionIssuesFullData,
     GenresFullData,
     IssuesFullData,
     LyricsFullData,
     Overview2FullData,
     OverviewFullData,
     ReplayGainFullData,
+    TagBar,
     TagCoverageFullData,
     TagCoverageRow,
     TagGroupQuality,
@@ -46,6 +48,7 @@ from storeroon.reports.utils import (
 
 REPORT_TITLES: dict[str, str] = {
     "overview": "Collection Overview",
+    "collection_issues": "Collection Issues Overview",
     "technical": "Audio Technical Quality",
     "tags": "Tag Coverage & Key Inventory",
     "tag_quality": "Tag Quality & Integrity",
@@ -1881,8 +1884,132 @@ def build_overview2_sections(data: Overview2FullData) -> list[dict[str, Any]]:
     return sections
 
 
+# =========================================================================
+# Collection Issues Overview
+# =========================================================================
+
+
+def _two_seg_bar(label: str, clean_pct: float, affected: int, total: int) -> str:
+    """Build a 2-segment stacked bar (clean / affected)."""
+    affected_pct = 100.0 - clean_pct
+    legend_parts: list[str] = [
+        f'<span class="leg-item"><span class="leg-dot leg-dot-clean"></span>clean: {fmt_pct(clean_pct)} [{fmt_count(total - affected)}]</span>',
+    ]
+    if affected > 0:
+        legend_parts.append(
+            f'<span class="leg-item"><span class="leg-dot leg-dot-affected"></span>affected: {fmt_pct(affected_pct)} [{fmt_count(affected)}]</span>'
+        )
+    return (
+        f'<div class="stacked-row">'
+        f'<div class="stacked-label"><span>{label}</span></div>'
+        f'<div class="stacked-bar">'
+        f'<div class="seg seg-clean" style="width:{clean_pct:.1f}%"></div>'
+        f'<div class="seg seg-affected" style="width:{affected_pct:.1f}%"></div>'
+        f'</div>'
+        f'<div class="stacked-legend">{"".join(legend_parts)}</div>'
+        f'</div>'
+    )
+
+
+def _tag_bar_html(tag: TagBar) -> str:
+    """Build a stacked bar for a tag with valid/invalid/misencoded/missing segments."""
+    has_invalid = tag.invalid_count > 0 or tag.invalid_pct > 0
+    has_misencoded = tag.misencoded_count > 0
+    # For tags with no validator, invalid is always 0 — don't show that segment
+    show_invalid = has_invalid or tag.invalid_pct > 0
+    # Determine if this tag has a validator by checking if invalid + valid + missing == total
+    # (if no validator, all present = valid, so invalid_count stays 0)
+    has_validator = (tag.valid_count + tag.invalid_count + tag.missing_count) > 0 and tag.invalid_count > 0
+
+    # Build segments
+    segments = (
+        f'<div class="seg seg-valid" style="width:{tag.valid_pct:.1f}%"></div>'
+        f'<div class="seg seg-invalid" style="width:{tag.invalid_pct:.1f}%"></div>'
+        f'<div class="seg seg-misencoded" style="width:{tag.misencoded_pct:.1f}%"></div>'
+        f'<div class="seg seg-missing" style="width:{tag.missing_pct:.1f}%"></div>'
+    )
+
+    # Build legend
+    legend_parts = [
+        f'<span class="leg-item"><span class="leg-dot leg-dot-valid"></span>'
+        f'valid: {fmt_pct(tag.valid_pct)} [{fmt_count(tag.valid_count)}]</span>',
+    ]
+    if tag.invalid_count > 0:
+        legend_parts.append(
+            f'<span class="leg-item"><span class="leg-dot leg-dot-invalid"></span>'
+            f'invalid: {fmt_pct(tag.invalid_pct)} [{fmt_count(tag.invalid_count)}]</span>'
+        )
+    if has_misencoded:
+        legend_parts.append(
+            f'<span class="leg-item"><span class="leg-dot leg-dot-misencoded"></span>'
+            f'misencoded: {fmt_pct(tag.misencoded_pct)} [{fmt_count(tag.misencoded_count)}]</span>'
+        )
+    if tag.missing_count > 0:
+        legend_parts.append(
+            f'<span class="leg-item"><span class="leg-dot leg-dot-missing"></span>'
+            f'missing: {fmt_pct(tag.missing_pct)} [{fmt_count(tag.missing_count)}]</span>'
+        )
+
+    return (
+        f'<div class="stacked-row">'
+        f'<div class="stacked-label"><span class="tag-name">{tag.tag_key}</span></div>'
+        f'<div class="stacked-bar">{segments}</div>'
+        f'<div class="stacked-legend">{"".join(legend_parts)}</div>'
+        f'</div>'
+    )
+
+
+def build_collection_issues_sections(data: CollectionIssuesFullData) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+
+    sections.append(
+        _section(
+            "Collection Issues Overview",
+            summary_cards=[
+                _card(fmt_count(data.total_albums), "Albums"),
+                _card(fmt_count(data.total_files), "Files"),
+            ],
+        )
+    )
+
+    # Album Health
+    if data.album_health:
+        bars_html = "".join(
+            _two_seg_bar(b.issue_label, b.clean_pct, b.albums_affected, b.total_albums)
+            for b in data.album_health
+        )
+        sections.append(
+            _section("Album Health", text_blocks=[_text(bars_html)])
+        )
+
+    # Track Health
+    if data.track_health:
+        bars_html = "".join(
+            _two_seg_bar(b.issue_label, b.clean_pct, b.files_affected, b.total_files)
+            for b in data.track_health
+        )
+        sections.append(
+            _section("Track Health", text_blocks=[_text(bars_html)])
+        )
+
+    # Tag Quality sections
+    for group_name, tags in [
+        ("Required Tags", data.required_tags),
+        ("Recommended Tags", data.recommended_tags),
+        ("Other Tracked Tags", data.other_tags),
+    ]:
+        if tags:
+            bars_html = "".join(_tag_bar_html(t) for t in tags)
+            sections.append(
+                _section(group_name, text_blocks=[_text(bars_html)])
+            )
+
+    return sections
+
+
 SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "overview": build_overview2_sections,
+    "collection_issues": build_collection_issues_sections,
     "technical": build_technical_sections,
     "tags": build_tag_coverage_sections,
     "tag_quality": build_tag_quality_sections,

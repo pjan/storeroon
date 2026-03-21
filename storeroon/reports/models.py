@@ -600,6 +600,59 @@ class IssuesSummaryData:
 
 
 # =========================================================================
+# Collection Issues Overview
+# =========================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class AlbumHealthBar:
+    """Bar showing % of albums without a specific issue type."""
+
+    issue_label: str
+    albums_affected: int
+    total_albums: int
+    clean_pct: float  # % without this issue
+
+
+@dataclass(frozen=True, slots=True)
+class TrackHealthBar:
+    """Bar showing % of files without a specific non-tag issue."""
+
+    issue_label: str
+    files_affected: int
+    total_files: int
+    clean_pct: float
+
+
+@dataclass(frozen=True, slots=True)
+class TagBar:
+    """Stacked bar showing valid/invalid/misencoded/missing breakdown for a tag."""
+
+    tag_key: str
+    valid_count: int
+    valid_pct: float
+    invalid_count: int  # 0 if no validator for this tag
+    invalid_pct: float
+    misencoded_count: int  # 0 if no encoding issues
+    misencoded_pct: float
+    missing_count: int
+    missing_pct: float
+
+
+@dataclass(frozen=True, slots=True)
+class CollectionIssuesFullData:
+    """Complete data for the collection issues overview report."""
+
+    total_albums: int
+    total_files: int
+    album_health: list[AlbumHealthBar]
+    track_health: list[TrackHealthBar]
+    required_tags: list[TagBar]
+    recommended_tags: list[TagBar]
+    other_tags: list[TagBar]
+
+
+# =========================================================================
 # Report 10 — Artist name consistency
 # =========================================================================
 

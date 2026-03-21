@@ -294,6 +294,40 @@ tbody tr:hover { background: var(--bg-alt); }
   min-width: 0;
 }
 .histogram-bar.bar-suspicious { background: var(--red); }
+/* Stacked coverage bars */
+.stacked-row { margin-bottom: 0.6rem; }
+.stacked-label {
+  font-size: 0.85rem; font-weight: 500; margin-bottom: 0.25rem;
+  display: flex; align-items: baseline; gap: 0.5rem;
+}
+.stacked-label .tag-name { font-family: var(--mono); font-size: 0.8rem; }
+.stacked-bar {
+  display: flex; height: 10px; border-radius: 5px; overflow: hidden;
+  background: var(--bg-alt); width: 100%;
+}
+.stacked-bar .seg { min-width: 1px; transition: width 0.3s; }
+.seg-valid { background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 75%, white)); }
+.seg-invalid { background: linear-gradient(90deg, var(--yellow), color-mix(in srgb, var(--yellow) 75%, white)); }
+.seg-misencoded { background: linear-gradient(90deg, #8b5cf6, color-mix(in srgb, #8b5cf6 75%, white)); }
+.seg-missing { background: linear-gradient(90deg, var(--red), color-mix(in srgb, var(--red) 75%, white)); }
+.seg-clean { background: linear-gradient(90deg, var(--green), color-mix(in srgb, var(--green) 75%, white)); }
+.seg-affected { background: linear-gradient(90deg, var(--red), color-mix(in srgb, var(--red) 75%, white)); }
+.stacked-legend {
+  display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.2rem;
+  font-size: 0.7rem; color: var(--dim);
+}
+.stacked-legend .leg-item { display: inline-flex; align-items: center; gap: 0.25rem; }
+.stacked-legend .leg-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.leg-dot-valid { background: var(--green); }
+.leg-dot-invalid { background: var(--yellow); }
+.leg-dot-misencoded { background: #8b5cf6; }
+.leg-dot-missing { background: var(--red); }
+.leg-dot-clean { background: var(--green); }
+.leg-dot-affected { background: var(--red); }
+@media (prefers-color-scheme: dark) {
+  .seg-misencoded { background: linear-gradient(90deg, #a78bfa, color-mix(in srgb, #a78bfa 75%, black)); }
+  .leg-dot-misencoded { background: #a78bfa; }
+}
 @media print {
   body { padding: 1rem; font-size: 10pt; }
   h1 { font-size: 14pt; }
