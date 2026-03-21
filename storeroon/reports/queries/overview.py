@@ -38,7 +38,8 @@ SELECT
     COALESCE(t_rt.tag_value, 'unknown')          AS releasetype,
     COALESCE(t_al.tag_value, 'Unknown')          AS album,
     COALESCE(t_cn.tag_value, 'none')             AS catalognumber,
-    COALESCE(t_td.tag_value, '1')                AS totaldiscs
+    COALESCE(t_td.tag_value, '1')                AS totaldiscs,
+    t_od.tag_value                                AS originaldate
 FROM files f
 LEFT JOIN flac_properties fp ON fp.file_id = f.id
 LEFT JOIN (
@@ -61,6 +62,10 @@ LEFT JOIN (
     SELECT file_id, tag_value FROM raw_tags
     WHERE tag_key_upper = 'TOTALDISCS' AND tag_index = 0
 ) t_td ON t_td.file_id = f.id
+LEFT JOIN (
+    SELECT file_id, tag_value FROM raw_tags
+    WHERE tag_key_upper = 'ORIGINALDATE' AND tag_index = 0
+) t_od ON t_od.file_id = f.id
 WHERE f.status = 'ok'
 """
 
@@ -93,6 +98,9 @@ def _build_hierarchy(
     cat_size: dict[_CatKey, int] = defaultdict(int)
     cat_duration: dict[_CatKey, float] = defaultdict(float)
     cat_totaldiscs: dict[_CatKey, int] = {}  # take max TOTALDISCS per catalog
+    # Track originaldate per (artist, releasetype, album) — take first non-null
+    _AlbumKey = tuple[str, str, str]
+    album_originaldate: dict[_AlbumKey, str | None] = {}
 
     total_tracks = 0
     total_size = 0
@@ -106,15 +114,20 @@ def _build_hierarchy(
         totaldiscs = _parse_totaldiscs(row["totaldiscs"])
         size: int = row["size_bytes"] or 0
         duration: float = row["duration_seconds"] or 0.0
+        odate: str | None = row["originaldate"]
 
         key: _CatKey = (artist, rtype, album, catno)
+        akey: _AlbumKey = (artist, rtype, album)
 
         cat_tracks[key] += 1
         cat_size[key] += size
         cat_duration[key] += duration
-        # Keep the maximum TOTALDISCS seen for this catalog group
         if key not in cat_totaldiscs or totaldiscs > cat_totaldiscs[key]:
             cat_totaldiscs[key] = totaldiscs
+
+        # Keep first non-null originaldate per album
+        if akey not in album_originaldate and odate and odate.strip():
+            album_originaldate[akey] = odate.strip()
 
         total_tracks += 1
         total_size += size
@@ -157,9 +170,11 @@ def _build_hierarchy(
 
     # Group albums by (artist, releasetype)
     rtype_groups: dict[tuple[str, str], list[AlbumBreakdown]] = defaultdict(list)
-    for (artist, rtype, album), catalogs in sorted(album_groups.items()):
+    for (artist, rtype, album), catalogs in album_groups.items():
+        odate = album_originaldate.get((artist, rtype, album))
         ab = AlbumBreakdown(
             album=album,
+            original_date=odate,
             track_count=sum(c.track_count for c in catalogs),
             disc_count=sum(c.disc_count for c in catalogs),
             total_size_bytes=sum(c.total_size_bytes for c in catalogs),
@@ -168,9 +183,20 @@ def _build_hierarchy(
         )
         rtype_groups[(artist, rtype)].append(ab)
 
-    # Group release types by artist
+    # Sort albums within each release type by display string
+    def _album_sort_key(ab: AlbumBreakdown) -> str:
+        parts: list[str] = []
+        if ab.original_date:
+            parts.append(ab.original_date)
+        parts.append(ab.album)
+        return " - ".join(parts).lower()
+
+    for albums in rtype_groups.values():
+        albums.sort(key=_album_sort_key)
+
+    # Group release types by artist, sorted alphabetically
     artist_groups: dict[str, list[ReleaseTypeBreakdown]] = defaultdict(list)
-    for (artist, rtype), albums in sorted(rtype_groups.items()):
+    for (artist, rtype), albums in rtype_groups.items():
         rtb = ReleaseTypeBreakdown(
             release_type=rtype,
             track_count=sum(a.track_count for a in albums),
@@ -181,9 +207,13 @@ def _build_hierarchy(
         )
         artist_groups[artist].append(rtb)
 
-    # Build final artist list, sorted by track count descending
+    # Sort release types within each artist alphabetically
+    for rtypes in artist_groups.values():
+        rtypes.sort(key=lambda rt: rt.release_type.lower())
+
+    # Build final artist list, sorted alphabetically
     result: list[ArtistBreakdown] = []
-    for artist in sorted(artist_groups.keys()):
+    for artist in sorted(artist_groups.keys(), key=str.lower):
         rtypes = artist_groups[artist]
         result.append(
             ArtistBreakdown(
@@ -195,8 +225,6 @@ def _build_hierarchy(
                 release_types=rtypes,
             )
         )
-
-    result.sort(key=lambda a: a.artist.lower())
     return result, totals
 
 

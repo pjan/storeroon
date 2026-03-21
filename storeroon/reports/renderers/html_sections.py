@@ -165,145 +165,108 @@ def _bucket_table(
 # =========================================================================
 
 
-def _hierarchy_row(
-    name_html: str,
-    indent: int,
-    tracks: int,
-    discs: int,
-    size: int,
-    duration: float,
-) -> str:
-    """Build a single <tr> for the hierarchy table."""
-    pad = f"padding-left:{indent * 1.5}rem" if indent else ""
+def _stats_badge(tracks: int, discs: int, size: int, duration: float) -> str:
+    """Build right-side stats badges for a collection row."""
     return (
-        f"<tr>"
-        f'<td style="{pad}">{name_html}</td>'
-        f'<td class="num">{fmt_count(tracks)}</td>'
-        f'<td class="num">{fmt_count(discs)}</td>'
-        f'<td class="num">{fmt_size_gb(size)}</td>'
-        f'<td class="num">{fmt_duration_hms(duration)}</td>'
-        f"</tr>"
+        f'<span class="coll-stat">{fmt_count(tracks)} tracks</span>'
+        f'<span class="coll-stat">{fmt_count(discs)} discs</span>'
+        f'<span class="coll-stat">{fmt_size_gb(size)}</span>'
+        f'<span class="coll-stat">{fmt_duration_hms(duration)}</span>'
     )
 
 
-def _expandable_row(
-    label: str,
-    indent: int,
-    tracks: int,
-    discs: int,
-    size: int,
-    duration: float,
-    children_html: str,
-) -> str:
-    """Build an expandable row: a summary row + a hidden children row."""
-    row = _hierarchy_row(
-        f'<details><summary style="cursor:pointer">{label}</summary></details>',
-        indent,
-        tracks,
-        discs,
-        size,
-        duration,
-    )
-    child_row = (
-        f'<tr class="child-rows" style="display:none"><td colspan="5">'
-        f'<table style="width:100%;border-collapse:collapse">{children_html}</table>'
-        f"</td></tr>"
-    )
-    return row + child_row
+def _album_display_name(alb: Any) -> str:
+    """Format album display: '{originaldate} - {album} [{catalognumber}]'."""
+    parts: list[str] = []
+    if alb.original_date:
+        parts.append(alb.original_date)
+    parts.append(alb.album)
+    name = " - ".join(parts)
+    if len(alb.catalogs) == 1 and alb.catalogs[0].catalog_number != "none":
+        name += f" [{alb.catalogs[0].catalog_number}]"
+    return name
 
 
 def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
-    """Build a table with nested expandable rows for the collection hierarchy."""
-    parts: list[str] = [
-        '<table style="width:100%;border-collapse:collapse">',
-        "<thead><tr>"
-        '<th style="text-align:left">Name</th>'
-        '<th class="num">Tracks</th>'
-        '<th class="num">Discs</th>'
-        '<th class="num">Size</th>'
-        '<th class="num">Duration</th>'
-        "</tr></thead>",
-        "<tbody>",
-    ]
+    """Build a tracklist-style hierarchy with expandable rows."""
+    # CSS for the collection breakdown (shared style with issues report)
+    style = (
+        "<style>"
+        ".coll-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;cursor:pointer;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}"
+        ".coll-row:hover{background:var(--bg-alt)}"
+        ".coll-indent{flex-shrink:0}"
+        ".coll-name{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".coll-name strong{font-weight:600}"
+        ".coll-stats{display:flex;gap:0.5rem;flex-shrink:0}"
+        ".coll-stat{font-size:0.75rem;color:var(--dim);font-variant-numeric:tabular-nums}"
+        ".coll-children{display:none;padding-left:1.5rem}"
+        ".coll-children.open{display:block}"
+        ".coll-level2{padding-left:1.5rem}"
+        ".coll-level3{padding-left:3rem}"
+        ".coll-dim{color:var(--dim);font-size:0.85rem}"
+        "</style>"
+    )
+
+    rows: list[str] = [style]
 
     for a in artists:
-        rt_rows: list[str] = []
-        for rt in a.release_types:
-            album_rows: list[str] = []
-            for alb in rt.albums:
-                if len(alb.catalogs) == 1:
-                    # Single version — show flat
-                    album_rows.append(
-                        _hierarchy_row(
-                            alb.album,
-                            3,
-                            alb.track_count,
-                            alb.disc_count,
-                            alb.total_size_bytes,
-                            alb.total_duration_seconds,
-                        )
-                    )
-                else:
-                    # Multiple releases — expandable
-                    cat_rows = "".join(
-                        _hierarchy_row(
-                            f'<span class="dim">{c.catalog_number}</span>',
-                            4,
-                            c.track_count,
-                            c.disc_count,
-                            c.total_size_bytes,
-                            c.total_duration_seconds,
-                        )
-                        for c in alb.catalogs
-                    )
-                    album_rows.append(
-                        _expandable_row(
-                            alb.album,
-                            3,
-                            alb.track_count,
-                            alb.disc_count,
-                            alb.total_size_bytes,
-                            alb.total_duration_seconds,
-                            cat_rows,
-                        )
-                    )
-
-            rt_rows.append(
-                _expandable_row(
-                    rt.release_type,
-                    2,
-                    rt.track_count,
-                    rt.disc_count,
-                    rt.total_size_bytes,
-                    rt.total_duration_seconds,
-                    "".join(album_rows),
-                )
-            )
-
-        parts.append(
-            _expandable_row(
-                f"<strong>{a.artist}</strong>",
-                0,
-                a.track_count,
-                a.disc_count,
-                a.total_size_bytes,
-                a.total_duration_seconds,
-                "".join(rt_rows),
-            )
+        artist_id = f"artist-{id(a)}"
+        rows.append(
+            f'<div class="coll-row" onclick="toggleColl(\'{artist_id}\')">'
+            f'<div class="coll-name"><strong>{a.artist}</strong></div>'
+            f'<div class="coll-stats">{_stats_badge(a.track_count, a.disc_count, a.total_size_bytes, a.total_duration_seconds)}</div>'
+            f"</div>"
+            f'<div class="coll-children" id="{artist_id}">'
         )
 
-    parts.append("</tbody></table>")
+        for rt in a.release_types:
+            rt_id = f"rt-{id(rt)}"
+            rows.append(
+                f'<div class="coll-row" onclick="toggleColl(\'{rt_id}\'); event.stopPropagation()">'
+                f'<div class="coll-name coll-dim">{rt.release_type}</div>'
+                f'<div class="coll-stats">{_stats_badge(rt.track_count, rt.disc_count, rt.total_size_bytes, rt.total_duration_seconds)}</div>'
+                f"</div>"
+                f'<div class="coll-children" id="{rt_id}">'
+            )
 
-    parts.append("""<script>
-document.querySelectorAll('td details').forEach(d => {
-  d.addEventListener('toggle', () => {
-    const childRow = d.closest('tr').nextElementSibling;
-    if (childRow) childRow.style.display = d.open ? '' : 'none';
-  });
-});
+            for alb in rt.albums:
+                display_name = _album_display_name(alb)
+                if len(alb.catalogs) > 1:
+                    alb_id = f"alb-{id(alb)}"
+                    rows.append(
+                        f'<div class="coll-row coll-level2" onclick="toggleColl(\'{alb_id}\'); event.stopPropagation()">'
+                        f'<div class="coll-name">{display_name}</div>'
+                        f'<div class="coll-stats">{_stats_badge(alb.track_count, alb.disc_count, alb.total_size_bytes, alb.total_duration_seconds)}</div>'
+                        f"</div>"
+                        f'<div class="coll-children" id="{alb_id}">'
+                    )
+                    for c in alb.catalogs:
+                        rows.append(
+                            f'<div class="coll-row coll-level3">'
+                            f'<div class="coll-name coll-dim">[{c.catalog_number}]</div>'
+                            f'<div class="coll-stats">{_stats_badge(c.track_count, c.disc_count, c.total_size_bytes, c.total_duration_seconds)}</div>'
+                            f"</div>"
+                        )
+                    rows.append("</div>")  # close alb children
+                else:
+                    rows.append(
+                        f'<div class="coll-row coll-level2">'
+                        f'<div class="coll-name">{display_name}</div>'
+                        f'<div class="coll-stats">{_stats_badge(alb.track_count, alb.disc_count, alb.total_size_bytes, alb.total_duration_seconds)}</div>'
+                        f"</div>"
+                    )
+
+            rows.append("</div>")  # close rt children
+        rows.append("</div>")  # close artist children
+
+    rows.append("""<script>
+function toggleColl(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
 </script>""")
 
-    return "\n".join(parts)
+    return "\n".join(rows)
 
 
 def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
@@ -326,7 +289,7 @@ def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
         hierarchy_html = _build_hierarchy_html(data.by_artist)
         sections.append(
             _section(
-                f"Collection Breakdown ({fmt_count(t.total_album_artists)} artists)",
+                "Collection Breakdown",
                 text_blocks=[_text(hierarchy_html)],
             )
         )

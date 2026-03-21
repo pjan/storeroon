@@ -115,6 +115,7 @@ class AlbumBreakdown:
     """An album, possibly with multiple catalog releases."""
 
     album: str  # ALBUM tag value
+    original_date: str | None  # ORIGINALDATE tag value
     track_count: int
     disc_count: int  # sum of catalog disc_counts
     total_size_bytes: int

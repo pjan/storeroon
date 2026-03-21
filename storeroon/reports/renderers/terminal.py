@@ -165,8 +165,16 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
                     fmt_duration_hms(rt.total_duration_seconds),
                 )
                 for alb in rt.albums:
+                    # Build display: "{originaldate} - {album} [{catalognumber}]"
+                    alb_parts: list[str] = []
+                    if alb.original_date:
+                        alb_parts.append(alb.original_date)
+                    alb_parts.append(alb.album)
+                    alb_display = " - ".join(alb_parts)
+                    if len(alb.catalogs) == 1 and alb.catalogs[0].catalog_number != "none":
+                        alb_display += f" [{alb.catalogs[0].catalog_number}]"
                     tbl.add_row(
-                        _indent(alb.album, 2),
+                        _indent(alb_display, 2),
                         fmt_count(alb.track_count),
                         fmt_count(alb.disc_count),
                         fmt_size_gb(alb.total_size_bytes),
@@ -175,7 +183,7 @@ def render_overview(console: Console, data: OverviewFullData) -> None:
                     if len(alb.catalogs) > 1:
                         for c in alb.catalogs:
                             tbl.add_row(
-                                f"[dim]{_indent(c.catalog_number, 3)}[/dim]",
+                                f"[dim]{_indent(f'[{c.catalog_number}]', 3)}[/dim]",
                                 f"[dim]{fmt_count(c.track_count)}[/dim]",
                                 f"[dim]{fmt_count(c.disc_count)}[/dim]",
                                 f"[dim]{fmt_size_gb(c.total_size_bytes)}[/dim]",
