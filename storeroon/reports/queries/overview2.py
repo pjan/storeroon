@@ -129,12 +129,15 @@ def full_data(conn: sqlite3.Connection) -> Overview2FullData:
         total_size += size
         total_duration += duration
 
-    # ── Phase 2: Count issues per album folder ──
+    # ── Phase 2: Count issues per album folder and per file ──
     issue_rows = conn.execute(_ISSUES_SQL).fetchall()
 
     folder_issues: dict[str, dict[str, int]] = defaultdict(lambda: {
         "critical": 0, "error": 0, "warning": 0, "info": 0,
     })
+    # Per-file severity tracking for health score calculation
+    file_has_error: dict[int, bool] = defaultdict(bool)
+    file_warning_count: dict[int, int] = defaultdict(int)
     files_with_issues: set[int] = set()
     total_issues = 0
     albums_with_issues: set[str] = set()
@@ -142,15 +145,34 @@ def full_data(conn: sqlite3.Connection) -> Overview2FullData:
     for ir in issue_rows:
         adir = _album_dir_from_path(ir["path"], ir["filename"])
         sev = ir["severity"]
+        fid = ir["file_id"]
         if sev in ("critical", "error"):
             folder_issues[adir]["critical" if sev == "critical" else "error"] += 1
+            file_has_error[fid] = True
         elif sev == "warning":
             folder_issues[adir]["warning"] += 1
+            file_warning_count[fid] += 1
         else:
             folder_issues[adir]["info"] += 1
-        files_with_issues.add(ir["file_id"])
+        files_with_issues.add(fid)
         total_issues += 1
         albums_with_issues.add(adir)
+
+    def _compute_health(adir: str, issues: dict[str, int]) -> int:
+        """Compute album health score from per-track issue data."""
+        if issues["critical"] > 0:
+            return 0
+        fids = folder_file_ids.get(adir, set())
+        if not fids:
+            return 100
+        track_scores: list[int] = []
+        for fid in fids:
+            if file_has_error.get(fid, False):
+                track_scores.append(0)
+            else:
+                warnings = file_warning_count.get(fid, 0)
+                track_scores.append(max(0, 100 - warnings * 5))
+        return round(sum(track_scores) / len(track_scores)) if track_scores else 100
 
     # ── Phase 3: Build hierarchy ──
     # Album level
@@ -170,6 +192,7 @@ def full_data(conn: sqlite3.Connection) -> Overview2FullData:
             track_count=folder_tracks[adir],
             total_size_bytes=folder_size[adir],
             total_duration_seconds=folder_duration[adir],
+            health_score=_compute_health(adir, issues),
             critical_count=issues["critical"],
             error_count=issues["error"],
             warning_count=issues["warning"],

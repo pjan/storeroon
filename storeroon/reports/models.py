@@ -155,13 +155,14 @@ class OverviewSummaryData:
 
 @dataclass(frozen=True, slots=True)
 class AlbumBreakdown2:
-    """Album folder with issue counts."""
+    """Album folder with issue counts and health score."""
 
     album_dir: str
     display_name: str  # "{YYYY} - {album} [{catalognumber}]"
     track_count: int
     total_size_bytes: int
     total_duration_seconds: float
+    health_score: int  # 0-100, based on per-track issue severity
     critical_count: int
     error_count: int
     warning_count: int

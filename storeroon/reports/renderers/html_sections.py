@@ -1900,20 +1900,21 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
         _counter[0] += 1
         return f"ov2-{_counter[0]}"
 
-    def _stats(album_count: int, track_count: int, size: int, duration: float) -> str:
+    def _stats(album_count: int, track_count: int) -> str:
         return (
             f'<span class="ov2-stat">{fmt_count(album_count)} albums</span>'
             f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
-            f'<span class="ov2-stat">{fmt_size_gb(size)}</span>'
-            f'<span class="ov2-stat">{fmt_duration_hms(duration)}</span>'
         )
 
-    def _album_stats(track_count: int, size: int, duration: float) -> str:
-        return (
-            f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
-            f'<span class="ov2-stat">{fmt_size_gb(size)}</span>'
-            f'<span class="ov2-stat">{fmt_duration_hms(duration)}</span>'
-        )
+    def _album_stats(track_count: int) -> str:
+        return f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
+
+    def _health_sev_class(score: int) -> str:
+        if score >= 80:
+            return "sev-clean"
+        if score >= 50:
+            return "sev-warning"
+        return "sev-error"
 
     for a in artists:
         aid = _uid()
@@ -1923,7 +1924,7 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
             f'<div class="ov2-row" onclick="toggleOv2(\'{aid}\')">'
             f'<div class="ov2-indicator {sev}"></div>'
             f'<div class="ov2-name"><strong>{a.artist}</strong></div>'
-            f'<div class="ov2-right">{_stats(a.album_count, a.track_count, a.total_size_bytes, a.total_duration_seconds)}'
+            f'<div class="ov2-right">{_stats(a.album_count, a.track_count)}'
             f'<div class="ov2-issue-badges">{ibadges}</div></div>'
             f"</div>"
             f'<div class="ov2-children" id="{aid}">'
@@ -1937,7 +1938,7 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
                 f'<div class="ov2-row" onclick="toggleOv2(\'{rid}\'); event.stopPropagation()">'
                 f'<div class="ov2-indicator {rt_sev}"></div>'
                 f'<div class="ov2-name ov2-dim">{rt.release_type}</div>'
-                f'<div class="ov2-right">{_stats(rt.album_count, rt.track_count, rt.total_size_bytes, rt.total_duration_seconds)}'
+                f'<div class="ov2-right">{_stats(rt.album_count, rt.track_count)}'
                 f'<div class="ov2-issue-badges">{rt_badges}</div></div>'
                 f"</div>"
                 f'<div class="ov2-children" id="{rid}">'
@@ -1947,12 +1948,12 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
                 encoded_dir = quote(alb.album_dir, safe="")
                 link = f"/report/album-issues?dir={encoded_dir}"
                 alb_badges = _issue_badges_html(alb.critical_count, alb.error_count, alb.warning_count, alb.info_count)
-                alb_sev = _severity_class_from_counts(alb.critical_count, alb.error_count, alb.warning_count, alb.info_count)
+                alb_sev = _health_sev_class(alb.health_score)
                 rows.append(
                     f'<a class="ov2-row" href="{link}" onclick="event.stopPropagation()">'
                     f'<div class="ov2-indicator {alb_sev}"></div>'
                     f'<div class="ov2-name">{alb.display_name}</div>'
-                    f'<div class="ov2-right">{_album_stats(alb.track_count, alb.total_size_bytes, alb.total_duration_seconds)}'
+                    f'<div class="ov2-right">{_album_stats(alb.track_count)}'
                     f'<div class="ov2-issue-badges">{alb_badges}</div></div>'
                     f"</a>"
                 )
