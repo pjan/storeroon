@@ -62,6 +62,14 @@ class TagInventoryRow:
 
 
 @dataclass(frozen=True, slots=True)
+class KeyInventoryFullData:
+    """Complete data for the key inventory report."""
+
+    total_files: int
+    inventory: list[TagInventoryRow]
+
+
+@dataclass(frozen=True, slots=True)
 class FieldValidationRow:
     """Validation summary for a single field in the tag-formats report."""
 

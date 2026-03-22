@@ -1699,11 +1699,82 @@ def build_collection_issues_sections(data: CollectionIssuesFullData) -> list[dic
     return sections
 
 
+# =========================================================================
+# Key Inventory
+# =========================================================================
+
+_CLASSIFICATION_DISPLAY: dict[str, str] = {
+    "required": "Required",
+    "recommended": "Recommended",
+    "other": "Other",
+    "alias": "Optional",
+    "standard_optional": "Optional",
+    "strip": "To be stripped",
+    "unknown": "To be stripped",
+}
+
+_CLASSIFICATION_ORDER: dict[str, int] = {
+    "required": 0,
+    "recommended": 1,
+    "other": 2,
+    "alias": 3,
+    "standard_optional": 3,
+    "strip": 4,
+    "unknown": 4,
+}
+
+
+def build_key_inventory_sections(data: Any) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+
+    sections.append(
+        _section(
+            "Key Inventory",
+            summary_cards=[
+                _card(fmt_count(data.total_files), "Total Files"),
+                _card(fmt_count(len(data.inventory)), "Distinct Tag Keys"),
+            ],
+        )
+    )
+
+    # Sort by classification order, then by tag key
+    sorted_inv = sorted(
+        data.inventory,
+        key=lambda r: (_CLASSIFICATION_ORDER.get(r.classification, 9), r.tag_key_upper),
+    )
+
+    rows: list[list[dict[str, Any]]] = []
+    for row in sorted_inv:
+        display_cls = _CLASSIFICATION_DISPLAY.get(row.classification, row.classification)
+        css_cls = f"tag-{row.classification}"
+        rows.append([
+            _cell(display_cls, cls=css_cls),
+            _cell(row.tag_key_upper, cls="mono"),
+            _cell(fmt_count(row.file_count), cls="num"),
+            _cell(fmt_pct(row.coverage_pct), cls="num"),
+        ])
+
+    sections.append(
+        _section(
+            f"All Tag Keys ({len(data.inventory)})",
+            tables=[_table(None, [
+                _hdr("Classification"),
+                _hdr("Tag Key"),
+                _hdr("Present", "num"),
+                _hdr("Coverage", "num"),
+            ], rows)],
+        )
+    )
+
+    return sections
+
+
 SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "overview": build_overview2_sections,
     "collection_issues": build_collection_issues_sections,
     "technical": build_technical_sections,
     "tags": build_tag_coverage_sections,
+    "key_inventory": build_key_inventory_sections,
     "artists": build_artists_sections,
     "genres": build_genres_sections,
     "lyrics": build_lyrics_sections,
