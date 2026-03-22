@@ -309,6 +309,59 @@ def _build_album_health(
             if has_mismatch:
                 issue_counts["Alias mismatch"] += 1
 
+    # Audio technical quality checks per album
+    from storeroon.reports.queries.technical import _is_suspicious_vendor
+
+    _AUDIO_PROPS_SQL = """
+    SELECT fp.bits_per_sample, fp.sample_rate_hz, fp.channels,
+           fp.vendor_string, f.id AS file_id
+    FROM flac_properties fp
+    JOIN files f ON f.id = fp.file_id
+    WHERE f.status = 'ok'
+    """
+    audio_rows = conn.execute(_AUDIO_PROPS_SQL).fetchall()
+
+    # Build file_id → album_dir reverse map
+    fid_to_adir: dict[int, str] = {}
+    for adir, fids in album_file_ids.items():
+        for fid in fids:
+            fid_to_adir[fid] = adir
+
+    # Group audio properties by album
+    adir_bit_depths: dict[str, set[int]] = defaultdict(set)
+    adir_sample_rates: dict[str, set[int]] = defaultdict(set)
+    adir_channels: dict[str, set[int]] = defaultdict(set)
+    adir_vendors: dict[str, set[str]] = defaultdict(set)
+
+    for ar in audio_rows:
+        adir = fid_to_adir.get(ar["file_id"])
+        if not adir:
+            continue
+        if ar["bits_per_sample"]:
+            adir_bit_depths[adir].add(ar["bits_per_sample"])
+        if ar["sample_rate_hz"]:
+            adir_sample_rates[adir].add(ar["sample_rate_hz"])
+        if ar["channels"]:
+            adir_channels[adir].add(ar["channels"])
+        if ar["vendor_string"]:
+            adir_vendors[adir].add(ar["vendor_string"])
+
+    for row in album_rows:
+        adir = row["album_dir"]
+        album_issues_found: set[str] = set()
+        if len(adir_bit_depths.get(adir, set())) > 1:
+            album_issues_found.add("Inconsistent bit depth")
+        if len(adir_sample_rates.get(adir, set())) > 1:
+            album_issues_found.add("Inconsistent sample rate")
+        if len(adir_channels.get(adir, set())) > 1:
+            album_issues_found.add("Inconsistent channels")
+        for vendor in adir_vendors.get(adir, set()):
+            if _is_suspicious_vendor(vendor):
+                album_issues_found.add("Suspicious encoder")
+                break
+        for label in album_issues_found:
+            issue_counts[label] += 1
+
     bars: list[AlbumHealthBar] = []
     for label, count in sorted(issue_counts.items(), key=lambda x: x[1], reverse=True):
         bars.append(AlbumHealthBar(
@@ -321,7 +374,9 @@ def _build_album_health(
     # Add bars for issue types with zero occurrences (all clean)
     all_possible = (
         ["Missing tracks", "Missing discs", "Duplicate track numbers",
-         "Track count mismatch", "Track number exceeds total", "Alias mismatch"]
+         "Track count mismatch", "Track number exceeds total", "Alias mismatch",
+         "Inconsistent bit depth", "Inconsistent sample rate",
+         "Inconsistent channels", "Suspicious encoder"]
         + [f"Inconsistent {f}" for f in _CONSISTENCY_FIELDS]
     )
     seen = {b.issue_label for b in bars}

@@ -266,6 +266,63 @@ def full_data(
                         total_issues += 1
                         albums_with_issues.add(adir)
 
+    # ── Phase 2d: Audio technical quality checks per album ──
+    from storeroon.reports.queries.technical import _is_suspicious_vendor
+
+    _AUDIO_PROPS_SQL = """
+    SELECT fp.bits_per_sample, fp.sample_rate_hz, fp.channels,
+           fp.vendor_string, f.id AS file_id
+    FROM flac_properties fp
+    JOIN files f ON f.id = fp.file_id
+    WHERE f.status = 'ok'
+    """
+    audio_rows = conn.execute(_AUDIO_PROPS_SQL).fetchall()
+
+    # Build file_id → album_dir reverse map
+    fid_to_adir: dict[int, str] = {}
+    for adir, fids in folder_file_ids.items():
+        for fid in fids:
+            fid_to_adir[fid] = adir
+
+    # Group audio properties by album
+    album_bit_depths: dict[str, set[int]] = defaultdict(set)
+    album_sample_rates: dict[str, set[int]] = defaultdict(set)
+    album_channels: dict[str, set[int]] = defaultdict(set)
+    album_vendors: dict[str, set[str]] = defaultdict(set)
+
+    for ar in audio_rows:
+        adir = fid_to_adir.get(ar["file_id"])
+        if not adir:
+            continue
+        if ar["bits_per_sample"]:
+            album_bit_depths[adir].add(ar["bits_per_sample"])
+        if ar["sample_rate_hz"]:
+            album_sample_rates[adir].add(ar["sample_rate_hz"])
+        if ar["channels"]:
+            album_channels[adir].add(ar["channels"])
+        if ar["vendor_string"]:
+            album_vendors[adir].add(ar["vendor_string"])
+
+    for adir in folder_meta:
+        if len(album_bit_depths.get(adir, set())) > 1:
+            folder_issues[adir]["error"] += 1
+            total_issues += 1
+            albums_with_issues.add(adir)
+        if len(album_sample_rates.get(adir, set())) > 1:
+            folder_issues[adir]["error"] += 1
+            total_issues += 1
+            albums_with_issues.add(adir)
+        if len(album_channels.get(adir, set())) > 1:
+            folder_issues[adir]["error"] += 1
+            total_issues += 1
+            albums_with_issues.add(adir)
+        for vendor in album_vendors.get(adir, set()):
+            if _is_suspicious_vendor(vendor):
+                folder_issues[adir]["info"] += 1
+                total_issues += 1
+                albums_with_issues.add(adir)
+                break  # one info per album, not per vendor
+
     # ── Phase 3: Build hierarchy ──
     # Album level
     rtype_groups: dict[tuple[str, str], list[AlbumBreakdown]] = defaultdict(list)
