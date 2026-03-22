@@ -59,9 +59,6 @@ class KeyInventoryFullData:
     inventory: list[TagInventoryRow]
 
 
-    count: int
-
-
 # =========================================================================
 # Collection overview
 # =========================================================================

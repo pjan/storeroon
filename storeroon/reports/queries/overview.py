@@ -21,6 +21,7 @@ from storeroon.reports.models import (
     OverviewTotals,
     ReleaseTypeBreakdown,
 )
+from storeroon.reports.utils import album_dir_from_path
 
 # ---------------------------------------------------------------------------
 # SQL
@@ -81,8 +82,6 @@ def _make_display_name(
     return name
 
 
-def _album_dir_from_path(path: str, filename: str) -> str:
-    return path[: len(path) - len(filename) - 1] if filename else path
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +147,7 @@ def full_data(
     albums_with_issues: set[str] = set()
 
     for ir in issue_rows:
-        adir = _album_dir_from_path(ir["path"], ir["filename"])
+        adir = album_dir_from_path(ir["path"])
         sev = ir["severity"]
         fid = ir["file_id"]
         if sev in ("critical", "error"):

@@ -92,11 +92,6 @@ def _empty_db_message(console: Console) -> None:
     )
 
 
-def _no_results_message(console: Console) -> None:
-    """Print a message indicating no tracks matched the given filters."""
-    console.print("[yellow]No tracks matched the given filters.[/yellow]")
-
-
 # =========================================================================
 # Collection overview
 # =========================================================================
@@ -911,8 +906,6 @@ def render_master_summary(console: Console, summary: MasterSummary) -> None:
         render_overview_summary(console, summary.overview)
     if summary.technical:
         render_technical_summary(console, summary.technical)
-    if summary.album_consistency:
-    if summary.duplicates:
     if summary.artists:
         render_artists_summary(console, summary.artists)
     if summary.genres:

@@ -24,7 +24,7 @@ from storeroon.reports.models import (
     TrackDetail,
     TrackIssue,
 )
-from storeroon.reports.utils import severity_order
+from storeroon.reports.utils import album_dir_from_path, severity_order
 
 # ---------------------------------------------------------------------------
 # SQL queries
@@ -67,19 +67,6 @@ ORDER BY
 # ---------------------------------------------------------------------------
 
 
-def _album_dir_from_path(file_path: str | None) -> str:
-    """Extract the parent directory from a file path string.
-
-    Returns a placeholder if the path is None or has no separator.
-    """
-    if not file_path:
-        return "(no file)"
-    idx = file_path.rfind("/")
-    if idx < 0:
-        idx = file_path.rfind("\\")
-    if idx < 0:
-        return "(root)"
-    return file_path[:idx]
 
 
 def _fetch_all_issues(conn: sqlite3.Connection) -> list[dict]:
@@ -132,7 +119,7 @@ def album_detail(
 
     # Filter to issues for this album
     album_issues = [
-        i for i in all_issues if _album_dir_from_path(i["file_path"]) == album_dir
+        i for i in all_issues if album_dir_from_path(i["file_path"]) == album_dir
     ]
 
     if not album_issues:

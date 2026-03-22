@@ -29,7 +29,12 @@ from storeroon.reports.models import (
     ReplayGainSummaryData,
     RgOutlier,
 )
-from storeroon.reports.utils import parse_replaygain_db, safe_pct
+from storeroon.reports.utils import (
+    TOTAL_OK_FILES_FILTERED_SQL,
+    TOTAL_OK_FILES_SQL,
+    parse_replaygain_db,
+    safe_pct,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -86,19 +91,6 @@ _GAIN_BUCKET_BOUNDARIES: list[tuple[str, float, float]] = [
 # ---------------------------------------------------------------------------
 # SQL queries
 # ---------------------------------------------------------------------------
-
-_TOTAL_OK_FILES_SQL = """
-SELECT COUNT(*) AS cnt FROM files WHERE status = 'ok'
-"""
-
-_TOTAL_OK_FILES_FILTERED_SQL = """
-SELECT COUNT(DISTINCT f.id) AS cnt
-FROM files f
-JOIN raw_tags rt ON rt.file_id = f.id
-WHERE f.status = 'ok'
-  AND rt.tag_key_upper = 'ALBUMARTIST'
-  AND LOWER(rt.tag_value) LIKE '%' || LOWER(?) || '%'
-"""
 
 # Fetch all (file_id, tag_value) pairs for a given ReplayGain tag key.
 _TAG_VALUES_SQL = """
@@ -169,9 +161,9 @@ def _get_total_ok_files(
 ) -> int:
     """Return count of files with status='ok', optionally filtered."""
     if artist_filter:
-        row = conn.execute(_TOTAL_OK_FILES_FILTERED_SQL, (artist_filter,)).fetchone()
+        row = conn.execute(TOTAL_OK_FILES_FILTERED_SQL, (artist_filter,)).fetchone()
     else:
-        row = conn.execute(_TOTAL_OK_FILES_SQL).fetchone()
+        row = conn.execute(TOTAL_OK_FILES_SQL).fetchone()
     return row[0] if row else 0
 
 

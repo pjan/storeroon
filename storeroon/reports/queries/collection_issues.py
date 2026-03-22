@@ -24,13 +24,11 @@ from storeroon.reports.models import (
     TagBar,
     TrackHealthBar,
 )
-from storeroon.reports.utils import safe_pct
+from storeroon.reports.utils import TOTAL_OK_FILES_SQL, safe_pct
 
 # ---------------------------------------------------------------------------
 # SQL
 # ---------------------------------------------------------------------------
-
-_TOTAL_OK_FILES_SQL = "SELECT COUNT(*) FROM files WHERE status = 'ok'"
 
 _ALL_ALBUM_DIRS_SQL = """
 SELECT DISTINCT SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) AS album_dir,
@@ -438,7 +436,7 @@ def full_data(
     tags_config: TagsConfig,
 ) -> CollectionIssuesFullData:
     """Return the collection issues overview."""
-    total_files_row = conn.execute(_TOTAL_OK_FILES_SQL).fetchone()
+    total_files_row = conn.execute(TOTAL_OK_FILES_SQL).fetchone()
     total_files = total_files_row[0] if total_files_row else 0
 
     # Album health (including alias mismatch check)

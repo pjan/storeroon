@@ -31,7 +31,14 @@ from storeroon.reports.renderers.html_sections import (
     SECTION_BUILDERS,
 )
 from storeroon.reports.serialization import REPORT_DATA_CLASSES, from_dict
-from storeroon.reports.utils import REPORT_NAMES, build_filter_string
+from storeroon.reports.utils import (
+    REPORT_NAMES,
+    build_filter_string,
+    classify_track_issues,
+    health_score_color,
+    track_badge_counts,
+    track_severity_class,
+)
 
 log = logging.getLogger("storeroon.server")
 
@@ -229,80 +236,7 @@ class StoreroonHandler(BaseHTTPRequestHandler):
         import math
         circumference = 2 * math.pi * 52  # r=52 from the SVG
         dash_offset = circumference * (1 - data.health_score / 100)
-        if data.health_score >= 80:
-            health_color = "var(--clean)"
-        elif data.health_score >= 50:
-            health_color = "var(--warning)"
-        else:
-            health_color = "var(--critical)"
-
-        # Helper functions for the template
-        _SEV_ORDER = {"critical": 0, "error": 1, "warning": 2, "info": 3}
-
-        def track_severity_class(track: Any) -> str:
-            if not track.issues:
-                return "sev-clean"
-            worst = min(track.issues, key=lambda i: _SEV_ORDER.get(i.severity, 9))
-            return f"sev-{worst.severity}"
-
-        def track_badge_counts(track: Any) -> list[tuple[str, int]]:
-            counts: dict[str, int] = {}
-            for issue in track.issues:
-                counts[issue.severity] = counts.get(issue.severity, 0) + 1
-            result = []
-            for sev in ("critical", "error", "warning", "info"):
-                if counts.get(sev, 0) > 0:
-                    result.append((sev, counts[sev]))
-            return result
-
-        _TRACK_ISSUE_TYPES = frozenset({
-            "file_unreadable", "tag_read_error", "no_audio_md5", "duplicate_checksum",
-        })
-
-        def classify_track_issues(track: Any) -> dict[str, Any]:
-            """Classify a track's issues into the display structure."""
-            track_issues: list[Any] = []  # non-tag issues
-            # Tag issues grouped: {severity_bucket: {sub_type: [field_names]}}
-            # severity_bucket: "required" (error), "recommended" (warning), "improvement" (info)
-            # sub_type: "missing", "invalid", "encoding"
-            tag_buckets: dict[str, dict[str, list[str]]] = {
-                "required": {"missing": [], "invalid": []},
-                "recommended": {"missing": [], "invalid": [], "encoding": [], "alias": []},
-                "improvement": {"missing": [], "invalid": []},
-            }
-
-            for issue in track.issues:
-                itype = issue.issue_type
-                if itype in _TRACK_ISSUE_TYPES:
-                    track_issues.append(issue)
-                elif itype == "missing_required_tag":
-                    tag_buckets["required"]["missing"].append(issue.field or itype)
-                elif itype == "invalid_required_tag":
-                    tag_buckets["required"]["invalid"].append(issue.field or itype)
-                elif itype == "missing_recommended_tag":
-                    tag_buckets["recommended"]["missing"].append(issue.field or itype)
-                elif itype == "invalid_recommended_tag":
-                    tag_buckets["recommended"]["invalid"].append(issue.field or itype)
-                elif itype == "tag_encoding_suspect":
-                    tag_buckets["recommended"]["encoding"].append(issue.field or itype)
-                elif itype == "alias_mismatch":
-                    tag_buckets["recommended"]["alias"].append(issue.field or itype)
-                elif itype == "missing_other_tag":
-                    tag_buckets["improvement"]["missing"].append(issue.field or itype)
-                elif itype == "invalid_other_tag":
-                    tag_buckets["improvement"]["invalid"].append(issue.field or itype)
-                else:
-                    track_issues.append(issue)
-
-            return {
-                "track_issues": track_issues,
-                "tag_buckets": tag_buckets,
-                "has_tag_issues": any(
-                    fields
-                    for bucket in tag_buckets.values()
-                    for fields in bucket.values()
-                ),
-            }
+        health_color = health_score_color(data.health_score)
 
         template = _load_template("album_report.html")
         html = template.render(

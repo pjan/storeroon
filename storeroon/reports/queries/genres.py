@@ -33,15 +33,11 @@ from storeroon.reports.models import (
     GenreValueRow,
     MultiGenreCombo,
 )
-from storeroon.reports.utils import safe_pct, token_sort_normalise
+from storeroon.reports.utils import TOTAL_OK_FILES_SQL, safe_pct, token_sort_normalise
 
 # ---------------------------------------------------------------------------
 # SQL queries
 # ---------------------------------------------------------------------------
-
-_TOTAL_OK_FILES_SQL = """
-SELECT COUNT(*) AS cnt FROM files WHERE status = 'ok'
-"""
 
 # All distinct GENRE values with the count of distinct files that have each value.
 _GENRE_VALUES_SQL = """
@@ -135,7 +131,7 @@ ORDER BY rt.file_id, rt.tag_index
 
 def _get_total_ok_files(conn: sqlite3.Connection) -> int:
     """Return count of files with status='ok'."""
-    row = conn.execute(_TOTAL_OK_FILES_SQL).fetchone()
+    row = conn.execute(TOTAL_OK_FILES_SQL).fetchone()
     return row[0] if row else 0
 
 

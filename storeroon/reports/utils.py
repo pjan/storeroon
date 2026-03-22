@@ -236,16 +236,18 @@ def severity_at_least(severity: str, min_severity: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def album_dir_from_path(file_path: str) -> str:
+def album_dir_from_path(file_path: str | None) -> str:
     """Extract the parent directory from a file path string.
 
-    This is the album boundary used throughout Sprint 2 reports.
+    This is the album boundary used throughout reports.
     Uses string operations (no filesystem access) for speed.
+    Returns an empty string if the path is None or has no separator.
 
     >>> album_dir_from_path("Artist/Albums/2020 - Album/Artist - 2020 - Album [CAT]/01 Track.flac")
     'Artist/Albums/2020 - Album/Artist - 2020 - Album [CAT]'
     """
-    # Find the last path separator.
+    if not file_path:
+        return ""
     idx = file_path.rfind("/")
     if idx < 0:
         idx = file_path.rfind("\\")
@@ -428,3 +430,103 @@ def output_filename(
     """
     ts = timestamp or now_filename_stamp()
     return f"{report_name}_{table_name}_{ts}.{ext}"
+
+
+# ---------------------------------------------------------------------------
+# Shared SQL constants
+# ---------------------------------------------------------------------------
+
+TOTAL_OK_FILES_SQL = "SELECT COUNT(*) AS cnt FROM files WHERE status = 'ok'"
+
+TOTAL_OK_FILES_FILTERED_SQL = """
+SELECT COUNT(DISTINCT f.id) AS cnt
+FROM files f
+JOIN raw_tags rt ON rt.file_id = f.id
+WHERE f.status = 'ok'
+  AND rt.tag_key_upper = 'ALBUMARTIST'
+  AND LOWER(rt.tag_value) LIKE '%' || LOWER(?) || '%'
+"""
+
+
+# ---------------------------------------------------------------------------
+# Issue classification helpers (used by album detail page)
+# ---------------------------------------------------------------------------
+
+_SEV_ORDER: dict[str, int] = {"critical": 0, "error": 1, "warning": 2, "info": 3}
+
+_TRACK_ISSUE_TYPES: frozenset[str] = frozenset({
+    "file_unreadable", "tag_read_error", "no_audio_md5", "duplicate_checksum",
+})
+
+
+def track_severity_class(track: object) -> str:
+    """Return the CSS severity class for a track based on its worst issue."""
+    issues = getattr(track, "issues", [])
+    if not issues:
+        return "sev-clean"
+    worst = min(issues, key=lambda i: _SEV_ORDER.get(i.severity, 9))
+    return f"sev-{worst.severity}"
+
+
+def track_badge_counts(track: object) -> list[tuple[str, int]]:
+    """Return (severity, count) pairs for a track's issues, omitting zeros."""
+    counts: dict[str, int] = {}
+    for issue in getattr(track, "issues", []):
+        counts[issue.severity] = counts.get(issue.severity, 0) + 1
+    return [(sev, counts[sev]) for sev in ("critical", "error", "warning", "info") if counts.get(sev, 0) > 0]
+
+
+def classify_track_issues(track: object) -> dict[str, object]:
+    """Classify a track's issues into display buckets.
+
+    Returns a dict with:
+    - ``track_issues``: list of non-tag issues
+    - ``tag_buckets``: dict of severity_bucket → sub_type → list of field names
+    - ``has_tag_issues``: bool
+    """
+    track_issues: list[object] = []
+    tag_buckets: dict[str, dict[str, list[str]]] = {
+        "required": {"missing": [], "invalid": []},
+        "recommended": {"missing": [], "invalid": [], "encoding": [], "alias": []},
+        "improvement": {"missing": [], "invalid": []},
+    }
+
+    for issue in getattr(track, "issues", []):
+        itype = issue.issue_type
+        if itype in _TRACK_ISSUE_TYPES:
+            track_issues.append(issue)
+        elif itype == "missing_required_tag":
+            tag_buckets["required"]["missing"].append(issue.field or itype)
+        elif itype == "invalid_required_tag":
+            tag_buckets["required"]["invalid"].append(issue.field or itype)
+        elif itype == "missing_recommended_tag":
+            tag_buckets["recommended"]["missing"].append(issue.field or itype)
+        elif itype == "invalid_recommended_tag":
+            tag_buckets["recommended"]["invalid"].append(issue.field or itype)
+        elif itype == "tag_encoding_suspect":
+            tag_buckets["recommended"]["encoding"].append(issue.field or itype)
+        elif itype == "alias_mismatch":
+            tag_buckets["recommended"]["alias"].append(issue.field or itype)
+        elif itype == "missing_other_tag":
+            tag_buckets["improvement"]["missing"].append(issue.field or itype)
+        elif itype == "invalid_other_tag":
+            tag_buckets["improvement"]["invalid"].append(issue.field or itype)
+        else:
+            track_issues.append(issue)
+
+    return {
+        "track_issues": track_issues,
+        "tag_buckets": tag_buckets,
+        "has_tag_issues": any(
+            fields for bucket in tag_buckets.values() for fields in bucket.values()
+        ),
+    }
+
+
+def health_score_color(score: int) -> str:
+    """Return the CSS color variable for a health score."""
+    if score >= 80:
+        return "var(--clean)"
+    if score >= 50:
+        return "var(--warning)"
+    return "var(--critical)"

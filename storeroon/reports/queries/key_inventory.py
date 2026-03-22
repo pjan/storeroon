@@ -13,9 +13,7 @@ import sqlite3
 
 from storeroon.config import TagsConfig
 from storeroon.reports.models import KeyInventoryFullData, TagInventoryRow
-from storeroon.reports.utils import safe_pct
-
-_TOTAL_OK_FILES_SQL = "SELECT COUNT(*) AS cnt FROM files WHERE status = 'ok'"
+from storeroon.reports.utils import TOTAL_OK_FILES_SQL, safe_pct
 
 _FULL_INVENTORY_SQL = """
 SELECT
@@ -33,7 +31,7 @@ def full_data(
     tags_config: TagsConfig,
 ) -> KeyInventoryFullData:
     """Return the key inventory."""
-    row = conn.execute(_TOTAL_OK_FILES_SQL).fetchone()
+    row = conn.execute(TOTAL_OK_FILES_SQL).fetchone()
     total_files = row[0] if row else 0
 
     rows = conn.execute(_FULL_INVENTORY_SQL).fetchall()
