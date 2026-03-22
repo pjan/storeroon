@@ -48,6 +48,7 @@ REPORT_TITLES: dict[str, str] = {
     "collection_issues": "Collection Issues Overview",
     "technical": "Audio Technical Quality",
     "tags": "Tag Coverage & Key Inventory",
+    "key_inventory": "Key Inventory",
     "artists": "Artist Name Consistency",
     "genres": "Genre Analysis",
     "lyrics": "Lyrics Coverage",

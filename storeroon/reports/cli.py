@@ -363,6 +363,37 @@ def _cmd_tags(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_key_inventory(args: argparse.Namespace) -> int:
+    """Execute ``report key-inventory``."""
+    conf = _load_config(args)
+    if conf is None:
+        return 1
+
+    conn = _open_db(conf)
+    if conn is None:
+        return 0
+
+    if _check_empty(conn):
+        output_console.print(
+            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
+        )
+        conn.close()
+        return 0
+
+    from storeroon.reports.queries import key_inventory
+
+    data = key_inventory.full_data(conn, conf.tags)
+    fmt = _get_output_format(args)
+
+    if fmt == "terminal":
+        output_console.print("[yellow]Key inventory is HTML-only. Use --output json and storeroon serve.[/yellow]")
+    else:
+        _write_json(args, conf, "key_inventory", data)
+
+    conn.close()
+    return 0
+
+
 def _cmd_album_issues(args: argparse.Namespace) -> int:
     """Execute ``report album-issues``."""
     conf = _load_config(args)
@@ -578,6 +609,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         genres,
         lyrics,
         collection_issues,
+        key_inventory,
         overview2,
         replaygain,
         tag_coverage,
@@ -591,6 +623,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
+        ("Key inventory", "key_inventory", lambda: key_inventory.full_data(conn, conf.tags)),
         (
             "Artists",
             "artists",
@@ -627,6 +660,7 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "collection-issues": _cmd_collection_issues,
     "technical": _cmd_technical,
     "tags": _cmd_tags,
+    "key-inventory": _cmd_key_inventory,
     "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,
     "genres": _cmd_genres,
@@ -754,6 +788,14 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     _add_output_args(p_tags)
     _add_config_arg(p_tags)
+
+    # --- key-inventory ---
+    p_key_inventory = report_subs.add_parser(
+        "key-inventory",
+        help="Key inventory: all tag keys with classification",
+    )
+    _add_output_args(p_key_inventory)
+    _add_config_arg(p_key_inventory)
 
     # --- album-issues ---
     p_album_issues = report_subs.add_parser(

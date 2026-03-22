@@ -14,6 +14,7 @@ import typing
 from typing import Any, TypeVar, get_type_hints
 
 from storeroon.reports.models import (
+    KeyInventoryFullData,
     ArtistsFullData,
     CollectionIssuesFullData,
     GenresFullData,
@@ -35,6 +36,7 @@ REPORT_DATA_CLASSES: dict[str, type] = {
     "collection_issues": CollectionIssuesFullData,
     "technical": TechnicalFullData,
     "tags": TagCoverageFullData,
+    "key_inventory": KeyInventoryFullData,
     "artists": ArtistsFullData,
     "genres": GenresFullData,
     "lyrics": LyricsFullData,

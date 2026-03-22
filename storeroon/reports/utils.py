@@ -19,6 +19,7 @@ REPORT_NAMES: tuple[str, ...] = (
     "collection_issues",
     "technical",
     "tags",
+    "key_inventory",
     "artists",
     "genres",
     "lyrics",
