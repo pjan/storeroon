@@ -308,7 +308,7 @@ class StoreroonHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 
-def run_server(
+def serve_reports(
     json_dir: Path,
     port: int = 8080,
     db_path: Path | None = None,
