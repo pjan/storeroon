@@ -88,6 +88,8 @@ class StoreroonHandler(BaseHTTPRequestHandler):
 
     json_dir: Path  # set on the class before serving
     db_path: Path | None  # set on the class before serving
+    aliases: dict[str, str]  # tag alias mappings from config
+    canonical_keys: frozenset[str]  # required + recommended tag keys
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -207,7 +209,11 @@ class StoreroonHandler(BaseHTTPRequestHandler):
             from storeroon.reports.queries.issues import album_report
 
             conn = connect(self.db_path, read_only=True)
-            data = album_report(conn, album_dir)
+            data = album_report(
+                conn, album_dir,
+                aliases=self.aliases,
+                canonical_keys=self.canonical_keys,
+            )
             conn.close()
         except Exception as exc:
             self._send_error(500, f"Failed to query album issues: {exc}")
@@ -261,7 +267,7 @@ class StoreroonHandler(BaseHTTPRequestHandler):
             # sub_type: "missing", "invalid", "encoding"
             tag_buckets: dict[str, dict[str, list[str]]] = {
                 "required": {"missing": [], "invalid": []},
-                "recommended": {"missing": [], "invalid": [], "encoding": []},
+                "recommended": {"missing": [], "invalid": [], "encoding": [], "alias": []},
                 "improvement": {"missing": [], "invalid": []},
             }
 
@@ -279,6 +285,8 @@ class StoreroonHandler(BaseHTTPRequestHandler):
                     tag_buckets["recommended"]["invalid"].append(issue.field or itype)
                 elif itype == "tag_encoding_suspect":
                     tag_buckets["recommended"]["encoding"].append(issue.field or itype)
+                elif itype == "alias_mismatch":
+                    tag_buckets["recommended"]["alias"].append(issue.field or itype)
                 elif itype == "missing_other_tag":
                     tag_buckets["improvement"]["missing"].append(issue.field or itype)
                 elif itype == "invalid_other_tag":
@@ -366,10 +374,18 @@ class StoreroonHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 
-def run_server(json_dir: Path, port: int = 8080, db_path: Path | None = None) -> None:
+def run_server(
+    json_dir: Path,
+    port: int = 8080,
+    db_path: Path | None = None,
+    aliases: dict[str, str] | None = None,
+    canonical_keys: frozenset[str] | None = None,
+) -> None:
     """Start the HTTP server and block until interrupted."""
     StoreroonHandler.json_dir = json_dir
     StoreroonHandler.db_path = db_path
+    StoreroonHandler.aliases = aliases or {}
+    StoreroonHandler.canonical_keys = canonical_keys or frozenset()
     server = HTTPServer(("127.0.0.1", port), StoreroonHandler)
     print(f"Serving storeroon reports at http://127.0.0.1:{port}/")
     print(f"JSON directory: {json_dir}")

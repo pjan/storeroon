@@ -441,6 +441,9 @@ def _parse_int(value: str, default: int = 0) -> int:
 def album_report(
     conn: sqlite3.Connection,
     album_dir: str,
+    *,
+    aliases: dict[str, str] | None = None,
+    canonical_keys: frozenset[str] | None = None,
 ) -> AlbumReportData | None:
     """Return rich album report data for the detail page.
 
@@ -543,6 +546,76 @@ def album_report(
             sev = "warning"
             warning_count += 1
         album_level_issues.append(AlbumLevelIssue(severity=sev, description=nv.description))
+
+    # ── Per-file alias consistency checks ──
+    # For each file, check alias pairs where canonical is in required/recommended.
+    # Only check when the file has the canonical key present.
+    _aliases = aliases or {}
+    _canonical_keys = canonical_keys or frozenset()
+
+    if _aliases and _canonical_keys:
+        # Build per-file tag maps for alias checking
+        _ALIAS_TAGS_SQL = """
+        SELECT rt.file_id, rt.tag_key_upper, rt.tag_value
+        FROM raw_tags rt
+        WHERE rt.file_id IN ({file_ids})
+          AND rt.tag_index = 0
+          AND rt.tag_key_upper IN ({keys})
+        """
+        # Collect all relevant keys (canonical + alias)
+        relevant_pairs: list[tuple[str, str]] = []  # (alias_key, canonical_key)
+        all_keys: set[str] = set()
+        for alias_key, canonical_key in _aliases.items():
+            if canonical_key in _canonical_keys:
+                relevant_pairs.append((alias_key, canonical_key))
+                all_keys.add(alias_key)
+                all_keys.add(canonical_key)
+
+        if relevant_pairs and file_map:
+            fid_list = ",".join(str(fid) for fid in file_map)
+            key_placeholders = ",".join(f"'{k}'" for k in all_keys)
+            sql = f"""
+            SELECT rt.file_id, rt.tag_key_upper, rt.tag_value
+            FROM raw_tags rt
+            WHERE rt.file_id IN ({fid_list})
+              AND rt.tag_index = 0
+              AND rt.tag_key_upper IN ({key_placeholders})
+            """
+            tag_rows = conn.execute(sql).fetchall()
+
+            # Build file_id → {tag_key: tag_value}
+            file_tags: dict[int, dict[str, str]] = defaultdict(dict)
+            for tr in tag_rows:
+                file_tags[tr["file_id"]][tr["tag_key_upper"]] = tr["tag_value"]
+
+            # Check each file
+            for fid in file_map:
+                tags = file_tags.get(fid, {})
+                for alias_key, canonical_key in relevant_pairs:
+                    canon_val = tags.get(canonical_key)
+                    if not canon_val or not canon_val.strip():
+                        continue  # canonical not present — skip
+                    alias_val = tags.get(alias_key)
+                    if not alias_val or not alias_val.strip():
+                        # Canonical present but alias missing
+                        issues_by_file[fid].append(TrackIssue(
+                            issue_type="alias_mismatch",
+                            severity="warning",
+                            description=f"{canonical_key} is set but {alias_key} is missing",
+                            field=f"{canonical_key} \u2194 {alias_key}",
+                            bucket="metadata",
+                        ))
+                        warning_count += 1
+                    elif canon_val.strip() != alias_val.strip():
+                        # Both present but values differ
+                        issues_by_file[fid].append(TrackIssue(
+                            issue_type="alias_mismatch",
+                            severity="warning",
+                            description=f"{canonical_key} ({canon_val!r}) differs from {alias_key} ({alias_val!r})",
+                            field=f"{canonical_key} \u2194 {alias_key}",
+                            bucket="metadata",
+                        ))
+                        warning_count += 1
 
     # Build track details
     tracks: list[TrackDetail] = []

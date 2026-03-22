@@ -407,7 +407,7 @@ h2 {
 
         {# Recommended Fixes (warning) #}
         {% set rec = classified.tag_buckets.recommended %}
-        {% if rec.missing or rec.invalid or rec.encoding %}
+        {% if rec.missing or rec.invalid or rec.encoding or rec.alias %}
         <div class="sev-bucket sev-bucket-warning">
           <h4>Recommended Fixes</h4>
           {% if rec.missing %}
@@ -426,6 +426,12 @@ h2 {
           <div class="tag-sub">
             <div class="tag-sub-label">Incorrectly Encoded Tags</div>
             <div class="chips">{% for f in rec.encoding %}<span class="chip chip-warning">{{ f }}</span>{% endfor %}</div>
+          </div>
+          {% endif %}
+          {% if rec.alias %}
+          <div class="tag-sub">
+            <div class="tag-sub-label">Alias Mismatch</div>
+            <div class="chips">{% for f in rec.alias %}<span class="chip chip-warning">{{ f }}</span>{% endfor %}</div>
           </div>
           {% endif %}
         </div>

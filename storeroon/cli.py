@@ -309,7 +309,12 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         )
         return 1
 
-    run_server(json_dir, port=args.port, db_path=db_path)
+    aliases = conf.tags.aliases
+    canonical_keys = frozenset(conf.tags.required + conf.tags.recommended)
+    run_server(
+        json_dir, port=args.port, db_path=db_path,
+        aliases=aliases, canonical_keys=canonical_keys,
+    )
     return 0
 
 
