@@ -90,7 +90,12 @@ def _album_dir_from_path(path: str, filename: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def full_data(conn: sqlite3.Connection) -> Overview2FullData:
+def full_data(
+    conn: sqlite3.Connection,
+    *,
+    aliases: dict[str, str] | None = None,
+    canonical_keys: frozenset[str] | None = None,
+) -> Overview2FullData:
     """Return collection overview with scan issue counts per album."""
 
     # ── Phase 1: Build folder hierarchy from files ──
@@ -200,6 +205,67 @@ def full_data(conn: sqlite3.Connection) -> Overview2FullData:
                 folder_issues[adir]["warning"] += 1
             total_issues += 1
             albums_with_issues.add(adir)
+
+    # ── Phase 2c: Per-file alias consistency checks ──
+    _aliases = aliases or {}
+    _canonical = canonical_keys or frozenset()
+
+    if _aliases and _canonical:
+        # Build relevant alias pairs
+        relevant_pairs: list[tuple[str, str]] = []
+        all_keys: set[str] = set()
+        for alias_key, canon_key in _aliases.items():
+            if canon_key in _canonical:
+                relevant_pairs.append((alias_key, canon_key))
+                all_keys.add(alias_key)
+                all_keys.add(canon_key)
+
+        if relevant_pairs:
+            # Fetch all relevant tag values across all files in one query
+            key_placeholders = ",".join(f"'{k}'" for k in all_keys)
+            alias_sql = f"""
+            SELECT rt.file_id, rt.tag_key_upper, rt.tag_value
+            FROM raw_tags rt
+            JOIN files f ON f.id = rt.file_id
+            WHERE f.status = 'ok'
+              AND rt.tag_index = 0
+              AND rt.tag_key_upper IN ({key_placeholders})
+            """
+            alias_rows = conn.execute(alias_sql).fetchall()
+
+            # Build file_id → {tag_key: tag_value}
+            file_tags: dict[int, dict[str, str]] = defaultdict(dict)
+            for ar in alias_rows:
+                file_tags[ar["file_id"]][ar["tag_key_upper"]] = ar["tag_value"]
+
+            # Check each file, attribute mismatches to the file's album folder
+            # Build file_id → album_dir lookup
+            file_to_adir: dict[int, str] = {}
+            for adir, fids in folder_file_ids.items():
+                for fid in fids:
+                    file_to_adir[fid] = adir
+
+            for fid, tags in file_tags.items():
+                adir = file_to_adir.get(fid)
+                if not adir:
+                    continue
+                for alias_key, canon_key in relevant_pairs:
+                    canon_val = tags.get(canon_key)
+                    if not canon_val or not canon_val.strip():
+                        continue  # canonical not present — skip
+                    alias_val = tags.get(alias_key)
+                    if not alias_val or not alias_val.strip():
+                        # Canonical present but alias missing → warning
+                        folder_issues[adir]["warning"] += 1
+                        file_warning_count[fid] = file_warning_count.get(fid, 0) + 1
+                        total_issues += 1
+                        albums_with_issues.add(adir)
+                    elif canon_val.strip() != alias_val.strip():
+                        # Both present but values differ → warning
+                        folder_issues[adir]["warning"] += 1
+                        file_warning_count[fid] = file_warning_count.get(fid, 0) + 1
+                        total_issues += 1
+                        albums_with_issues.add(adir)
 
     # ── Phase 3: Build hierarchy ──
     # Album level

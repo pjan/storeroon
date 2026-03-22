@@ -253,7 +253,9 @@ def _cmd_overview(args: argparse.Namespace) -> int:
 
     from storeroon.reports.queries import overview2
 
-    data = overview2.full_data(conn)
+    _aliases = conf.tags.aliases
+    _canonical = frozenset(conf.tags.required + conf.tags.recommended)
+    data = overview2.full_data(conn, aliases=_aliases, canonical_keys=_canonical)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
@@ -585,7 +587,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
 
     # (label, report_name, query_fn_call)
     report_specs: list[tuple[str, str, Callable[[], object]]] = [
-        ("Overview", "overview", lambda: overview2.full_data(conn)),
+        ("Overview", "overview", lambda: overview2.full_data(conn, aliases=conf.tags.aliases, canonical_keys=frozenset(conf.tags.required + conf.tags.recommended))),
         ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),

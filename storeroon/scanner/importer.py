@@ -138,8 +138,8 @@ def _validate_tag_value(tag_key_upper: str, value: str) -> bool:
     if not value or not value.strip():
         return False  # Empty values are invalid
 
-    # Date tags
-    if tag_key_upper in ("DATE", "ORIGINALDATE"):
+    # Date tags (including aliases YEAR, ORIGINALYEAR)
+    if tag_key_upper in ("DATE", "ORIGINALDATE", "YEAR", "ORIGINALYEAR"):
         return is_valid_date(value)
 
     # Track number (positive int or legacy format)
@@ -152,8 +152,8 @@ def _validate_tag_value(tag_key_upper: str, value: str) -> bool:
             return int(v) > 0
         return False
 
-    # Positive integers
-    if tag_key_upper in ("TRACKTOTAL", "DISCNUMBER", "DISCTOTAL", "TOTALDISCS"):
+    # Positive integers (including aliases TOTALTRACKS, DISCS)
+    if tag_key_upper in ("TRACKTOTAL", "DISCNUMBER", "DISCTOTAL", "TOTALDISCS", "TOTALTRACKS", "DISCS"):
         v = value.strip()
         if not RE_POSITIVE_INT.match(v):
             return False
@@ -313,6 +313,15 @@ def _read_flac(filepath: Path, tags_config: TagsConfig) -> _FlacData:
     recommended_set = set(tags_config.recommended)
     other_set = set(tags_config.other)
 
+    # Build set of alias keys that should be checked as recommended:
+    # aliases whose canonical key is in required or recommended
+    canonical_keys = required_set | recommended_set
+    alias_set: set[str] = set()
+    for alias_key, canonical_key in tags_config.aliases.items():
+        if canonical_key in canonical_keys:
+            alias_set.add(alias_key)
+    valid_alias_keys: set[str] = set()
+
     for tag_key, tag_value in tag_pairs:
         key_upper = tag_key.upper()
         idx = key_counter[key_upper]
@@ -409,6 +418,26 @@ def _read_flac(filepath: Path, tags_config: TagsConfig) -> _FlacData:
                     )
                 )
 
+        # Check alias tags (treated as recommended)
+        if key_upper in alias_set:
+            if not is_empty and is_valid:
+                valid_alias_keys.add(key_upper)
+            elif not is_empty and not is_valid:
+                data.issues.append(
+                    _IssueRecord(
+                        issue_type="invalid_recommended_tag",
+                        severity="warning",
+                        description=f"Invalid format for alias tag {key_upper!r}",
+                        details=json.dumps(
+                            {
+                                "tag": key_upper,
+                                "value": tag_value[:100],
+                                "tag_index": idx,
+                            }
+                        ),
+                    )
+                )
+
     # -- Missing tag checks by category -----------------------------------
     # Required tags
     for tag_name in tags_config.required:
@@ -443,6 +472,18 @@ def _read_flac(filepath: Path, tags_config: TagsConfig) -> _FlacData:
                     severity="info",
                     description=f"Tracked tag missing: {tag_name}",
                     details=json.dumps({"tag": tag_name}),
+                )
+            )
+
+    # Alias tags (treated as recommended)
+    for alias_key in alias_set:
+        if alias_key not in valid_alias_keys:
+            data.issues.append(
+                _IssueRecord(
+                    issue_type="missing_recommended_tag",
+                    severity="warning",
+                    description=f"Alias tag missing: {alias_key}",
+                    details=json.dumps({"tag": alias_key}),
                 )
             )
 
