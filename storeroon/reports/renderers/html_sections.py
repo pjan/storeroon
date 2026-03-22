@@ -875,7 +875,7 @@ def _build_overview_html(artists: list[ArtistBreakdown]) -> str:
             rows.append(
                 f'<div class="ov-row" onclick="toggleOv(\'{rid}\'); event.stopPropagation()">'
                 f'<div class="ov-indicator {rt_sev}"></div>'
-                f'<div class="ov-name ov-dim">{rt.release_type}</div>'
+                f'<div class="ov-name ov-dim">{rt.release_type.upper()}</div>'
                 f'<div class="ov-right">{_stats(rt.album_count, rt.track_count)}'
                 f'<div class="ov-issue-badges">{rt_badges}</div></div>'
                 f"</div>"
