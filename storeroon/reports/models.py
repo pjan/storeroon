@@ -91,7 +91,7 @@ class InvalidValueRow:
 
 
 # =========================================================================
-# Report 1 — Collection overview
+# Collection overview
 # =========================================================================
 
 
@@ -106,47 +106,6 @@ class OverviewTotals:
     total_size_bytes: int
 
 
-@dataclass(frozen=True, slots=True)
-class AlbumBreakdown:
-    """A single album folder in the collection."""
-
-    album_dir: str  # folder path (unique identifier)
-    display_name: str  # "{originaldate} - {album} [{catalognumber}]"
-    track_count: int
-    total_size_bytes: int
-    total_duration_seconds: float
-
-
-@dataclass(frozen=True, slots=True)
-class ReleaseTypeBreakdown:
-    """A release type (album, ep, single, etc.) within an artist."""
-
-    release_type: str  # RELEASETYPE tag value, or "unknown"
-    album_count: int
-    track_count: int
-    total_size_bytes: int
-    total_duration_seconds: float
-    albums: list[AlbumBreakdown]
-
-
-@dataclass(frozen=True, slots=True)
-class ArtistBreakdown:
-    """Top-level: breakdown per album artist."""
-
-    artist: str  # ALBUMARTIST tag value
-    album_count: int
-    track_count: int
-    total_size_bytes: int
-    total_duration_seconds: float
-    release_types: list[ReleaseTypeBreakdown]
-
-
-@dataclass(frozen=True, slots=True)
-class OverviewFullData:
-    """Complete data for the collection overview report."""
-
-    totals: OverviewTotals
-    by_artist: list[ArtistBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,12 +116,12 @@ class OverviewSummaryData:
 
 
 # =========================================================================
-# Report 1b — Collection overview 2 (with scan issues)
+# Collection overview (with scan issues)
 # =========================================================================
 
 
 @dataclass(frozen=True, slots=True)
-class AlbumBreakdown2:
+class AlbumBreakdown:
     """Album folder with issue counts and health score."""
 
     album_dir: str
@@ -178,7 +137,7 @@ class AlbumBreakdown2:
 
 
 @dataclass(frozen=True, slots=True)
-class ReleaseTypeBreakdown2:
+class ReleaseTypeBreakdown:
     """Release type with aggregated issue counts."""
 
     release_type: str
@@ -190,11 +149,11 @@ class ReleaseTypeBreakdown2:
     error_count: int
     warning_count: int
     info_count: int
-    albums: list[AlbumBreakdown2]
+    albums: list[AlbumBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
-class ArtistBreakdown2:
+class ArtistBreakdown:
     """Artist with aggregated issue counts."""
 
     artist: str
@@ -206,7 +165,7 @@ class ArtistBreakdown2:
     error_count: int
     warning_count: int
     info_count: int
-    release_types: list[ReleaseTypeBreakdown2]
+    release_types: list[ReleaseTypeBreakdown]
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,16 +178,16 @@ class IssuesTotals:
 
 
 @dataclass(frozen=True, slots=True)
-class Overview2FullData:
+class OverviewFullData:
     """Complete data for collection overview 2."""
 
     totals: OverviewTotals
     issues_totals: IssuesTotals
-    by_artist: list[ArtistBreakdown2]
+    by_artist: list[ArtistBreakdown]
 
 
 # =========================================================================
-# Report 2 — Audio technical quality
+# Audio technical quality
 # =========================================================================
 
 
@@ -297,7 +256,7 @@ class TechnicalSummaryData:
 
 
 # =========================================================================
-# Report 3 — Tag coverage and key inventory
+# Tag coverage (legacy models)
 # =========================================================================
 
 
@@ -326,7 +285,7 @@ class TagCoverageSummaryData:
 
 
 # =========================================================================
-# Report 5 — Tag quality and integrity
+# Tag quality (legacy models)
 # =========================================================================
 
 
@@ -352,7 +311,7 @@ class DateQualityRow:
 
 
 # =========================================================================
-# Report 6 — Intra-album consistency
+# Album consistency (legacy models)
 # =========================================================================
 
 
@@ -488,7 +447,7 @@ class TagQualitySummaryData:
 
 
 # =========================================================================
-# Report 9 — Scan issues (Album-centric)
+# Scan issues
 # =========================================================================
 
 
@@ -662,7 +621,7 @@ class CollectionIssuesFullData:
 
 
 # =========================================================================
-# Report 10 — Artist name consistency
+# Artist name consistency
 # =========================================================================
 
 
@@ -718,7 +677,7 @@ class ArtistsSummaryData:
 
 
 # =========================================================================
-# Report 11 — Genre analysis
+# Genre analysis
 # =========================================================================
 
 
@@ -771,7 +730,7 @@ class GenresSummaryData:
 
 
 # =========================================================================
-# Report 12 — Lyrics coverage
+# Lyrics coverage
 # =========================================================================
 
 
@@ -818,7 +777,7 @@ class LyricsSummaryData:
 
 
 # =========================================================================
-# Report 13 — ReplayGain coverage
+# ReplayGain coverage
 # =========================================================================
 
 

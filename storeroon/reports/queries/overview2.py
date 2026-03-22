@@ -1,11 +1,11 @@
 """
-storeroon.reports.queries.overview2 — Collection overview with scan issues.
+storeroon.reports.queries.overview2 — Collection overview.
 
 Same folder-based hierarchy as overview, but enriched with per-album
 issue counts from scan_issues.
 
 Public API:
-    full_data(conn) -> Overview2FullData
+    full_data(conn) -> OverviewFullData
 """
 
 from __future__ import annotations
@@ -14,12 +14,13 @@ import sqlite3
 from collections import defaultdict
 
 from storeroon.reports.models import (
-    AlbumBreakdown2,
-    ArtistBreakdown2,
+    AlbumBreakdown,
+    ArtistBreakdown,
     IssuesTotals,
-    Overview2FullData,
+    OverviewFullData,
+    OverviewSummaryData,
     OverviewTotals,
-    ReleaseTypeBreakdown2,
+    ReleaseTypeBreakdown,
 )
 
 # ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ def full_data(
     *,
     aliases: dict[str, str] | None = None,
     canonical_keys: frozenset[str] | None = None,
-) -> Overview2FullData:
+) -> OverviewFullData:
     """Return collection overview with scan issue counts per album."""
 
     # ── Phase 1: Build folder hierarchy from files ──
@@ -269,7 +270,7 @@ def full_data(
 
     # ── Phase 3: Build hierarchy ──
     # Album level
-    rtype_groups: dict[tuple[str, str], list[AlbumBreakdown2]] = defaultdict(list)
+    rtype_groups: dict[tuple[str, str], list[AlbumBreakdown]] = defaultdict(list)
 
     for adir, meta in folder_meta.items():
         artist = meta["albumartist"] or "Unknown"
@@ -279,7 +280,7 @@ def full_data(
         )
         issues = folder_issues.get(adir, {"critical": 0, "error": 0, "warning": 0, "info": 0})
 
-        ab = AlbumBreakdown2(
+        ab = AlbumBreakdown(
             album_dir=adir,
             display_name=display,
             track_count=folder_tracks[adir],
@@ -298,9 +299,9 @@ def full_data(
         albums.sort(key=lambda a: a.display_name.lower())
 
     # Release type level
-    artist_groups: dict[str, list[ReleaseTypeBreakdown2]] = defaultdict(list)
+    artist_groups: dict[str, list[ReleaseTypeBreakdown]] = defaultdict(list)
     for (artist, rtype), albums in rtype_groups.items():
-        rtb = ReleaseTypeBreakdown2(
+        rtb = ReleaseTypeBreakdown(
             release_type=rtype,
             album_count=len(albums),
             track_count=sum(a.track_count for a in albums),
@@ -319,11 +320,11 @@ def full_data(
         rtypes.sort(key=lambda rt: rt.release_type.lower())
 
     # Artist level
-    result: list[ArtistBreakdown2] = []
+    result: list[ArtistBreakdown] = []
     for artist in sorted(artist_groups.keys(), key=str.lower):
         rtypes = artist_groups[artist]
         result.append(
-            ArtistBreakdown2(
+            ArtistBreakdown(
                 artist=artist,
                 album_count=sum(rt.album_count for rt in rtypes),
                 track_count=sum(rt.track_count for rt in rtypes),
@@ -353,8 +354,15 @@ def full_data(
         total_issues=total_issues,
     )
 
-    return Overview2FullData(
+    return OverviewFullData(
         totals=totals,
         issues_totals=issues_totals,
         by_artist=result,
     )
+
+
+def summary_data(conn: sqlite3.Connection) -> OverviewSummaryData:
+    """Return headline metrics only for the ``summary`` command."""
+    # Reuse full_data to get totals (the hierarchy is discarded)
+    data = full_data(conn)
+    return OverviewSummaryData(totals=data.totals)

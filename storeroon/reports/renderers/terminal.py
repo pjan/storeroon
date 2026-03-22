@@ -24,7 +24,7 @@ from storeroon.reports.models import (
     LyricsFullData,
     LyricsSummaryData,
     MasterSummary,
-    Overview2FullData,
+    OverviewFullData,
     OverviewSummaryData,
     ReplayGainFullData,
     ReplayGainSummaryData,
@@ -98,7 +98,7 @@ def _no_results_message(console: Console) -> None:
 
 
 # =========================================================================
-# Report 1 — Collection overview
+# Collection overview
 # =========================================================================
 
 
@@ -107,7 +107,7 @@ def _indent(text: str, level: int) -> str:
     return "  " * level + text
 
 
-def render_overview(console: Console, data: Overview2FullData) -> None:
+def render_overview(console: Console, data: OverviewFullData) -> None:
     """Render the full collection overview report."""
     if data.totals.total_tracks == 0:
         _empty_db_message(console)
@@ -186,7 +186,7 @@ def render_overview_summary(console: Console, data: OverviewSummaryData) -> None
 
 
 # =========================================================================
-# Report 2 — Audio technical quality
+# Audio technical quality
 # =========================================================================
 
 
@@ -345,7 +345,7 @@ def render_technical_summary(console: Console, data: TechnicalSummaryData) -> No
 
 
 # =========================================================================
-# Report 9 — Scan issues
+# Scan issues
 # =========================================================================
 
 
@@ -405,7 +405,7 @@ def render_album_issues(console: Console, data) -> None:
 
 
 # =========================================================================
-# Report 10 — Artist name consistency
+# Artist name consistency
 # =========================================================================
 
 
@@ -552,7 +552,7 @@ def render_artists_summary(console: Console, data: ArtistsSummaryData) -> None:
 
 
 # =========================================================================
-# Report 11 — Genre analysis
+# Genre analysis
 # =========================================================================
 
 
@@ -665,7 +665,7 @@ def render_genres_summary(console: Console, data: GenresSummaryData) -> None:
 
 
 # =========================================================================
-# Report 12 — Lyrics coverage
+# Lyrics coverage
 # =========================================================================
 
 
@@ -771,7 +771,7 @@ def render_lyrics_summary(console: Console, data: LyricsSummaryData) -> None:
 
 
 # =========================================================================
-# Report 13 — ReplayGain coverage
+# ReplayGain coverage
 # =========================================================================
 
 

@@ -19,6 +19,7 @@ from typing import Callable
 from storeroon.config import TagsConfig
 from storeroon.reports.models import (
     AlbumHealthBar,
+    AliasUsageRow,
     CollectionIssuesFullData,
     TagBar,
     TrackHealthBar,
@@ -81,8 +82,30 @@ WHERE si.resolved = 0
 GROUP BY tag_key
 """
 
+# Alias consistency: for files that have either the canonical or alias key,
+# return both values so we can check consistency.
+_ALIAS_CONSISTENCY_SQL = """
+SELECT
+    f.id AS file_id,
+    rt_canon.tag_value AS canonical_value,
+    rt_alias.tag_value AS alias_value
+FROM files f
+LEFT JOIN raw_tags rt_canon
+    ON rt_canon.file_id = f.id
+    AND rt_canon.tag_key_upper = ?
+    AND rt_canon.tag_index = 0
+    AND TRIM(rt_canon.tag_value) != ''
+LEFT JOIN raw_tags rt_alias
+    ON rt_alias.file_id = f.id
+    AND rt_alias.tag_key_upper = ?
+    AND rt_alias.tag_index = 0
+    AND TRIM(rt_alias.tag_value) != ''
+WHERE f.status = 'ok'
+  AND (rt_canon.tag_value IS NOT NULL OR rt_alias.tag_value IS NOT NULL)
+"""
+
 # ---------------------------------------------------------------------------
-# Tag format validators (same as tag_quality.py)
+# Tag format validators
 # ---------------------------------------------------------------------------
 
 from storeroon.reports.utils import (
@@ -144,6 +167,50 @@ def _get_validator(tag_key: str) -> Callable[[str], bool] | None:
 # ---------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------
+
+
+def _alias_usage(
+    conn: sqlite3.Connection,
+    aliases: dict[str, str],
+    canonical_keys: frozenset[str],
+) -> list[AliasUsageRow]:
+    """Check value consistency for alias pairs where the canonical key
+    is in the required or recommended config lists.
+
+    For each qualifying alias pair, looks at all files that have the
+    canonical key set. Of those, what percentage also have the alias
+    key set to the exact same value?
+    """
+    result: list[AliasUsageRow] = []
+    for alias_key, canonical_key in sorted(aliases.items()):
+        if canonical_key not in canonical_keys:
+            continue
+
+        rows = conn.execute(
+            _ALIAS_CONSISTENCY_SQL, (canonical_key, alias_key)
+        ).fetchall()
+
+        files_with_canonical = [
+            r for r in rows if r["canonical_value"] is not None
+        ]
+        if not files_with_canonical:
+            continue
+
+        total = len(files_with_canonical)
+        consistent = sum(
+            1 for r in files_with_canonical
+            if r["alias_value"] is not None
+            and r["canonical_value"].strip() == r["alias_value"].strip()
+        )
+
+        result.append(
+            AliasUsageRow(
+                canonical_key=canonical_key,
+                alias_key=alias_key,
+                consistency_pct=safe_pct(consistent, total),
+            )
+        )
+    return result
 
 
 def _build_album_health(
@@ -405,7 +472,6 @@ def full_data(
     other_tags = _build_tag_bars(conn, tags_config.other, total_files, encoding_counts)
 
     # Alias consistency
-    from storeroon.reports.queries.tag_coverage import _alias_usage
     alias_consistency = _alias_usage(conn, tags_config.aliases, canonical_keys)
 
     return CollectionIssuesFullData(

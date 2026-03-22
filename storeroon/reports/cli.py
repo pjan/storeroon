@@ -177,7 +177,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         artists,
         genres,
         lyrics,
-        overview,
+        overview2,
         replaygain,
         technical,
     )
@@ -188,7 +188,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     console.print("[dim]Gathering summary data…[/dim]")
 
     try:
-        summary.overview = overview.summary_data(conn)
+        summary.overview = overview2.summary_data(conn)
     except Exception as exc:
         log.warning("Overview summary failed: %s", exc)
 

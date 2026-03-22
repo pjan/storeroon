@@ -15,14 +15,11 @@ from typing import Any
 
 from storeroon.reports.models import (
     ArtistBreakdown,
-    ArtistBreakdown2,
     ArtistsFullData,
     BucketCount,
     CollectionIssuesFullData,
     GenresFullData,
-    IssuesFullData,
     LyricsFullData,
-    Overview2FullData,
     OverviewFullData,
     ReplayGainFullData,
     TagBar,
@@ -156,128 +153,12 @@ def _bucket_table(
 
 
 # =========================================================================
-# Report 1 — Collection overview
+# Collection overview (with scan issues)
 # =========================================================================
 
 
-def _build_hierarchy_html(artists: list[ArtistBreakdown]) -> str:
-    """Build a tracklist-style collection hierarchy with expandable rows."""
-    from urllib.parse import quote
-
-    style = (
-        "<style>"
-        ".coll-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;"
-        "cursor:pointer;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}"
-        ".coll-row:hover{background:var(--bg-alt)}"
-        ".coll-name{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
-        ".coll-name strong{font-weight:600}"
-        ".coll-badges{display:flex;gap:0.35rem;flex-shrink:0}"
-        ".coll-badge{font-size:0.7rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:4px;"
-        "background:var(--bg-alt);color:var(--dim);font-variant-numeric:tabular-nums;"
-        "min-width:4.5rem;text-align:right;display:inline-block}"
-        ".coll-children{display:none;padding-left:1.5rem}"
-        ".coll-children.open{display:block}"
-        ".coll-dim{color:var(--dim);font-size:0.85rem}"
-        "a.coll-row{text-decoration:none;color:inherit}"
-        "</style>"
-    )
-
-    rows: list[str] = [style]
-    _counter = [0]
-
-    def _uid() -> str:
-        _counter[0] += 1
-        return f"c{_counter[0]}"
-
-    def _badges(album_count: int, track_count: int, size: int, duration: float) -> str:
-        return (
-            f'<span class="coll-badge">{fmt_count(album_count)} albums</span>'
-            f'<span class="coll-badge">{fmt_count(track_count)} tracks</span>'
-            f'<span class="coll-badge">{fmt_size_gb(size)}</span>'
-            f'<span class="coll-badge">{fmt_duration_hms(duration)}</span>'
-        )
-
-    def _album_badges(track_count: int, size: int, duration: float) -> str:
-        return (
-            f'<span class="coll-badge">{fmt_count(track_count)} tracks</span>'
-            f'<span class="coll-badge">{fmt_size_gb(size)}</span>'
-            f'<span class="coll-badge">{fmt_duration_hms(duration)}</span>'
-        )
-
-    for a in artists:
-        aid = _uid()
-        rows.append(
-            f'<div class="coll-row" onclick="toggleColl(\'{aid}\')">'
-            f'<div class="coll-name"><strong>{a.artist}</strong></div>'
-            f'<div class="coll-badges">{_badges(a.album_count, a.track_count, a.total_size_bytes, a.total_duration_seconds)}</div>'
-            f"</div>"
-            f'<div class="coll-children" id="{aid}">'
-        )
-
-        for rt in a.release_types:
-            rid = _uid()
-            rows.append(
-                f'<div class="coll-row" onclick="toggleColl(\'{rid}\'); event.stopPropagation()">'
-                f'<div class="coll-name coll-dim">{rt.release_type}</div>'
-                f'<div class="coll-badges">{_badges(rt.album_count, rt.track_count, rt.total_size_bytes, rt.total_duration_seconds)}</div>'
-                f"</div>"
-                f'<div class="coll-children" id="{rid}">'
-            )
-
-            for alb in rt.albums:
-                encoded_dir = quote(alb.album_dir, safe="")
-                link = f"/report/album-issues?dir={encoded_dir}"
-                rows.append(
-                    f'<a class="coll-row" href="{link}" onclick="event.stopPropagation()">'
-                    f'<div class="coll-name">{alb.display_name}</div>'
-                    f'<div class="coll-badges">{_album_badges(alb.track_count, alb.total_size_bytes, alb.total_duration_seconds)}</div>'
-                    f"</a>"
-                )
-
-            rows.append("</div>")
-        rows.append("</div>")
-
-    rows.append("""<script>
-function toggleColl(id) {
-  var el = document.getElementById(id);
-  if (el) el.classList.toggle('open');
-}
-</script>""")
-
-    return "\n".join(rows)
-
-
-def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-
-    t = data.totals
-    sections.append(
-        _section(
-            "Collection Totals",
-            summary_cards=[
-                _card(fmt_count(t.total_album_artists), "Album Artists"),
-                _card(fmt_count(t.total_albums), "Albums"),
-                _card(fmt_count(t.total_tracks), "Tracks"),
-                _card(fmt_size_gb(t.total_size_bytes), "Size"),
-                _card(fmt_duration_hms(t.total_duration_seconds), "Duration"),
-            ],
-        )
-    )
-
-    if data.by_artist:
-        hierarchy_html = _build_hierarchy_html(data.by_artist)
-        sections.append(
-            _section(
-                "Collection Breakdown",
-                text_blocks=[_text(hierarchy_html)],
-            )
-        )
-
-    return sections
-
-
 # =========================================================================
-# Report 2 — Audio technical quality
+# Audio technical quality
 # =========================================================================
 
 
@@ -286,11 +167,7 @@ def _histogram_html(
     buckets: list[BucketCount],
     bar_cls: str | None = None,
 ) -> str:
-    """Build an HTML histogram bar chart from BucketCount instances.
-
-    Each bar's height is proportional to its percentage relative to the
-    largest bucket.  Hovering shows a tooltip with count and percentage.
-    """
+    """Build an HTML histogram bar chart from BucketCount instances."""
     if not buckets:
         return ""
     max_pct = max(b.percentage for b in buckets) or 1.0
@@ -338,7 +215,6 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
         )
     )
 
-    # Histogram charts for distributions — 2-column grid
     charts: list[str] = []
     for label, buckets in [
         ("Sample Rate", data.sample_rate_distribution),
@@ -449,166 +325,8 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
     return sections
 
 
-
-
 # =========================================================================
-# Report 9 — Scan issues
-# =========================================================================
-
-
-def _album_severity_class(album: Any) -> str:
-    """Return CSS severity class for an album based on its worst issue level."""
-    if album.error_count > 0:
-        return "sev-error"
-    if album.warning_count > 0:
-        return "sev-warning"
-    if album.info_count > 0:
-        return "sev-info"
-    return "sev-clean"
-
-
-def _album_badges_html(album: Any) -> str:
-    """Build badge HTML for an album's severity counts."""
-    badges: list[str] = []
-    if album.error_count > 0:
-        badges.append(f'<span class="badge badge-error">{album.error_count}</span>')
-    if album.warning_count > 0:
-        badges.append(f'<span class="badge badge-warning">{album.warning_count}</span>')
-    if album.info_count > 0:
-        badges.append(f'<span class="badge badge-info">{album.info_count}</span>')
-    return "".join(badges)
-
-
-def build_issues_sections(data: IssuesFullData) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-
-    sections.append(
-        _section(
-            "Scan Issues by Album",
-            summary_cards=[
-                _card(fmt_count(data.total_albums), "Albums with Issues"),
-                _card(fmt_count(data.total_files_with_issues), "Files with Issues"),
-                _card(fmt_count(data.total_issues), "Total Issues"),
-            ],
-        )
-    )
-
-    if data.total_albums == 0:
-        sections.append(
-            _section(
-                "Result",
-                text_blocks=[_text("No albums with scan issues.", cls="dim")],
-            )
-        )
-        return sections
-
-    from urllib.parse import quote
-
-    # Build tracklist-style album rows
-    rows_html: list[str] = []
-    for album in data.albums:
-        encoded_dir = quote(album.album_dir, safe="")
-        link = f"/report/album-issues?dir={encoded_dir}"
-        sev_cls = _album_severity_class(album)
-        cat_display = f" [{album.catalog_number}]" if album.catalog_number else ""
-        badges = _album_badges_html(album)
-
-        rows_html.append(
-            f'<a href="{link}" class="album-row" style="text-decoration:none;color:inherit">'
-            f'<div class="album-row-inner">'
-            f'<div class="album-indicator {sev_cls}"></div>'
-            f'<div class="album-artist">{album.artist}</div>'
-            f'<div class="album-title">{album.album}{cat_display}</div>'
-            f'<div class="album-badges">{badges}</div>'
-            f'</div>'
-            f'</a>'
-        )
-
-    # CSS for album rows (injected once)
-    style = (
-        '<style>'
-        '.album-row{display:block;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}'
-        '.album-row:hover{background:var(--bg-alt)}'
-        '.album-row-inner{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem}'
-        '.album-indicator{width:4px;border-radius:2px;align-self:stretch;min-height:1.5rem;flex-shrink:0}'
-        '.sev-error{background:var(--red)}'
-        '.sev-warning{background:var(--yellow)}'
-        '.sev-info{background:var(--dim)}'
-        '.sev-clean{background:var(--green)}'
-        '.album-artist{font-size:0.85rem;color:var(--dim);flex-shrink:0;width:20%}'
-        '.album-title{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
-        '.album-badges{display:flex;gap:0.3rem;flex-shrink:0}'
-        '.badge{font-size:0.7rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;line-height:1.3}'
-        '.badge-error{background:var(--red-bg);color:var(--red)}'
-        '.badge-warning{background:var(--yellow-bg);color:var(--yellow)}'
-        '.badge-info{background:var(--bg-alt);color:var(--dim)}'
-        '</style>'
-    )
-
-    list_html = style + "".join(rows_html)
-
-    sections.append(
-        _section(
-            f"Albums with Issues ({fmt_count(data.total_albums)})",
-            text_blocks=[_text(list_html)],
-        )
-    )
-
-    return sections
-
-
-def build_album_issues_sections(data: Any) -> list[dict[str, Any]]:
-    """Build HTML sections for a single album's issue detail page."""
-    sections: list[dict[str, Any]] = []
-
-    cat_display = data.catalog_number or ""
-    sections.append(
-        _section(
-            f"{data.artist} \u2014 {data.album}",
-            summary_cards=[
-                _card(str(data.total_files), "Files in Album"),
-                _card(str(data.files_with_issues), "Files with Issues"),
-                _card(str(data.error_count), "Errors"),
-                _card(str(data.warning_count), "Warnings"),
-                _card(str(data.info_count), "Info"),
-            ],
-            text_blocks=[
-                _text(f'<span class="dim">Directory: <code>{data.album_dir}</code></span>')
-            ] + ([_text(f'<span class="dim">Catalog #: {cat_display}</span>')] if cat_display else []),
-        )
-    )
-
-    if data.issues:
-        issue_rows: list[list[dict[str, Any]]] = []
-        for issue in data.issues:
-            sev_cls = f"severity-{issue.severity}"
-            issue_rows.append([
-                _cell(issue.severity.upper(), cls=sev_cls),
-                _cell(issue.file_name, cls="mono"),
-                _cell(issue.issue_type, cls="mono"),
-                _cell(issue.description),
-            ])
-        sections.append(
-            _section(
-                "Issues",
-                tables=[_table(None, [
-                    _hdr("Severity"),
-                    _hdr("File"),
-                    _hdr("Issue Type"),
-                    _hdr("Description"),
-                ], issue_rows)],
-            )
-        )
-    else:
-        sections.append(
-            _section("Issues", text_blocks=[_text("No issues found.", cls="dim")])
-        )
-
-    return sections
-
-
-# =========================================================================
-# Report 10 — Artist name consistency
+# Artist name consistency
 # =========================================================================
 
 
@@ -797,7 +515,7 @@ def build_artists_sections(data: ArtistsFullData) -> list[dict[str, Any]]:
 
 
 # =========================================================================
-# Report 11 — Genre analysis
+# Genre analysis
 # =========================================================================
 
 
@@ -931,7 +649,7 @@ def build_genres_sections(data: GenresFullData) -> list[dict[str, Any]]:
 
 
 # =========================================================================
-# Report 12 — Lyrics coverage
+# Lyrics coverage
 # =========================================================================
 
 
@@ -1082,7 +800,7 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
 
 
 # =========================================================================
-# Report 13 — ReplayGain coverage
+# ReplayGain coverage
 # =========================================================================
 
 
@@ -1249,27 +967,27 @@ def _issue_badges_html(critical: int, error: int, warning: int, info: int) -> st
     return "".join(badges)
 
 
-def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
-    """Build the overview2 hierarchy with issue indicators."""
+def _build_overview_html(artists: list[ArtistBreakdown]) -> str:
+    """Build the overview hierarchy with issue indicators."""
     from urllib.parse import quote
 
     style = (
         "<style>"
-        ".ov2-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;"
+        ".ov-row{display:flex;align-items:center;padding:0.5rem 0;gap:0.75rem;"
         "cursor:pointer;border-bottom:1px solid var(--bg-alt);transition:background 0.1s}"
-        ".ov2-row:hover{background:var(--bg-alt)}"
-        ".ov2-indicator{width:4px;border-radius:2px;align-self:stretch;min-height:1.5rem;flex-shrink:0}"
-        ".ov2-name{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
-        ".ov2-name strong{font-weight:600}"
-        ".ov2-right{display:flex;gap:0.35rem;flex-shrink:0;align-items:center}"
-        ".ov2-stat{font-size:0.7rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:4px;"
+        ".ov-row:hover{background:var(--bg-alt)}"
+        ".ov-indicator{width:4px;border-radius:2px;align-self:stretch;min-height:1.5rem;flex-shrink:0}"
+        ".ov-name{flex:1;font-size:0.9rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".ov-name strong{font-weight:600}"
+        ".ov-right{display:flex;gap:0.35rem;flex-shrink:0;align-items:center}"
+        ".ov-stat{font-size:0.7rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:4px;"
         "background:var(--bg-alt);color:var(--dim);font-variant-numeric:tabular-nums;"
         "min-width:4.5rem;text-align:right;display:inline-block}"
-        ".ov2-issue-badges{display:flex;gap:0.25rem;margin-left:0.5rem}"
-        ".ov2-children{display:none;padding-left:1.5rem}"
-        ".ov2-children.open{display:block}"
-        ".ov2-dim{color:var(--dim);font-size:0.85rem}"
-        "a.ov2-row{text-decoration:none;color:inherit}"
+        ".ov-issue-badges{display:flex;gap:0.25rem;margin-left:0.5rem}"
+        ".ov-children{display:none;padding-left:1.5rem}"
+        ".ov-children.open{display:block}"
+        ".ov-dim{color:var(--dim);font-size:0.85rem}"
+        "a.ov-row{text-decoration:none;color:inherit}"
         ".sev-critical{background:var(--red)}"
         ".sev-error{background:var(--red)}"
         ".sev-warning{background:var(--yellow)}"
@@ -1288,16 +1006,16 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
 
     def _uid() -> str:
         _counter[0] += 1
-        return f"ov2-{_counter[0]}"
+        return f"ov-{_counter[0]}"
 
     def _stats(album_count: int, track_count: int) -> str:
         return (
-            f'<span class="ov2-stat">{fmt_count(album_count)} albums</span>'
-            f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
+            f'<span class="ov-stat">{fmt_count(album_count)} albums</span>'
+            f'<span class="ov-stat">{fmt_count(track_count)} tracks</span>'
         )
 
     def _album_stats(track_count: int) -> str:
-        return f'<span class="ov2-stat">{fmt_count(track_count)} tracks</span>'
+        return f'<span class="ov-stat">{fmt_count(track_count)} tracks</span>'
 
     def _health_sev_class(score: int) -> str:
         if score >= 80:
@@ -1311,13 +1029,13 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
         ibadges = _issue_badges_html(a.critical_count, a.error_count, a.warning_count, a.info_count)
         sev = _severity_class_from_counts(a.critical_count, a.error_count, a.warning_count, a.info_count)
         rows.append(
-            f'<div class="ov2-row" onclick="toggleOv2(\'{aid}\')">'
-            f'<div class="ov2-indicator {sev}"></div>'
-            f'<div class="ov2-name"><strong>{a.artist}</strong></div>'
-            f'<div class="ov2-right">{_stats(a.album_count, a.track_count)}'
-            f'<div class="ov2-issue-badges">{ibadges}</div></div>'
+            f'<div class="ov-row" onclick="toggleOv(\'{aid}\')">'
+            f'<div class="ov-indicator {sev}"></div>'
+            f'<div class="ov-name"><strong>{a.artist}</strong></div>'
+            f'<div class="ov-right">{_stats(a.album_count, a.track_count)}'
+            f'<div class="ov-issue-badges">{ibadges}</div></div>'
             f"</div>"
-            f'<div class="ov2-children" id="{aid}">'
+            f'<div class="ov-children" id="{aid}">'
         )
 
         for rt in a.release_types:
@@ -1325,13 +1043,13 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
             rt_badges = _issue_badges_html(rt.critical_count, rt.error_count, rt.warning_count, rt.info_count)
             rt_sev = _severity_class_from_counts(rt.critical_count, rt.error_count, rt.warning_count, rt.info_count)
             rows.append(
-                f'<div class="ov2-row" onclick="toggleOv2(\'{rid}\'); event.stopPropagation()">'
-                f'<div class="ov2-indicator {rt_sev}"></div>'
-                f'<div class="ov2-name ov2-dim">{rt.release_type}</div>'
-                f'<div class="ov2-right">{_stats(rt.album_count, rt.track_count)}'
-                f'<div class="ov2-issue-badges">{rt_badges}</div></div>'
+                f'<div class="ov-row" onclick="toggleOv(\'{rid}\'); event.stopPropagation()">'
+                f'<div class="ov-indicator {rt_sev}"></div>'
+                f'<div class="ov-name ov-dim">{rt.release_type}</div>'
+                f'<div class="ov-right">{_stats(rt.album_count, rt.track_count)}'
+                f'<div class="ov-issue-badges">{rt_badges}</div></div>'
                 f"</div>"
-                f'<div class="ov2-children" id="{rid}">'
+                f'<div class="ov-children" id="{rid}">'
             )
 
             for alb in rt.albums:
@@ -1340,11 +1058,11 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
                 alb_badges = _issue_badges_html(alb.critical_count, alb.error_count, alb.warning_count, alb.info_count)
                 alb_sev = _health_sev_class(alb.health_score)
                 rows.append(
-                    f'<a class="ov2-row" href="{link}" onclick="event.stopPropagation()">'
-                    f'<div class="ov2-indicator {alb_sev}"></div>'
-                    f'<div class="ov2-name">{alb.display_name}</div>'
-                    f'<div class="ov2-right">{_album_stats(alb.track_count)}'
-                    f'<div class="ov2-issue-badges">{alb_badges}</div></div>'
+                    f'<a class="ov-row" href="{link}" onclick="event.stopPropagation()">'
+                    f'<div class="ov-indicator {alb_sev}"></div>'
+                    f'<div class="ov-name">{alb.display_name}</div>'
+                    f'<div class="ov-right">{_album_stats(alb.track_count)}'
+                    f'<div class="ov-issue-badges">{alb_badges}</div></div>'
                     f"</a>"
                 )
 
@@ -1352,7 +1070,7 @@ def _build_overview2_html(artists: list[ArtistBreakdown2]) -> str:
         rows.append("</div>")
 
     rows.append("""<script>
-function toggleOv2(id) {
+function toggleOv(id) {
   var el = document.getElementById(id);
   if (el) el.classList.toggle('open');
 }
@@ -1361,7 +1079,7 @@ function toggleOv2(id) {
     return "\n".join(rows)
 
 
-def build_overview2_sections(data: Overview2FullData) -> list[dict[str, Any]]:
+def build_overview_sections(data: OverviewFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     t = data.totals
@@ -1391,7 +1109,7 @@ def build_overview2_sections(data: Overview2FullData) -> list[dict[str, Any]]:
     )
 
     if data.by_artist:
-        hierarchy_html = _build_overview2_html(data.by_artist)
+        hierarchy_html = _build_overview_html(data.by_artist)
         sections.append(
             _section(
                 "Collection Breakdown",
@@ -1615,7 +1333,7 @@ def build_key_inventory_sections(data: Any) -> list[dict[str, Any]]:
 
 
 SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
-    "overview": build_overview2_sections,
+    "overview": build_overview_sections,
     "collection_issues": build_collection_issues_sections,
     "technical": build_technical_sections,
     "key_inventory": build_key_inventory_sections,
