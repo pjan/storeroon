@@ -262,7 +262,7 @@ class ReportsConfig:
     """Configuration for Sprint 2 analysis reports."""
 
     fuzzy_threshold: float
-    output_dir: Path
+    report_dir: Path
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ReportsConfig:
@@ -272,8 +272,9 @@ class ReportsConfig:
                 "[reports] fuzzy_threshold must be between 0.0 and 1.0, "
                 f"got {threshold}"
             )
-        output_dir = Path(raw.get("output_dir", "reports"))
-        return cls(fuzzy_threshold=threshold, output_dir=output_dir)
+        # Support both "report_dir" (new) and "output_dir" (legacy) keys.
+        report_dir = Path(raw.get("report_dir", raw.get("output_dir", "reports")))
+        return cls(fuzzy_threshold=threshold, report_dir=report_dir)
 
 
 # ---------------------------------------------------------------------------

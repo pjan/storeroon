@@ -2,25 +2,22 @@
 storeroon.reports.cli — CLI layer for reports.
 
 Wires the query and renderer layers together. Handles ``--output``,
-``--output-dir``, ``--artist``, ``--album``, ``--min-severity`` flags.
-Handles empty database gracefully (print a clear message, exit 0).
-Handles ``--artist`` / ``--album`` filter producing no results gracefully.
+``--report-dir``, ``--artist``, ``--album`` flags. Handles empty database
+gracefully (print a clear message, exit 0). Handles ``--artist`` / ``--album``
+filter producing no results gracefully.
 
 CLI structure::
 
-    python -m storeroon report summary
-    python -m storeroon report overview      [--output terminal|json] [--output-dir PATH]
-    python -m storeroon report technical     [--output ...] [--output-dir PATH]
-    python -m storeroon report tag-formats   [--output ...] [--output-dir PATH] [--artist ARTIST]
-    python -m storeroon report album-consistency [--output ...] [--output-dir PATH] [--artist ARTIST]
-    python -m storeroon report ids           [--output ...] [--output-dir PATH] [--artist ARTIST]
-    python -m storeroon report issues        [--output ...] [--output-dir PATH] [--min-severity ...]
-    python -m storeroon report album-issues  ALBUM_DIR [--output ...] [--output-dir PATH]
-    python -m storeroon report artists       [--output ...] [--output-dir PATH]
-    python -m storeroon report genres        [--output ...] [--output-dir PATH]
-    python -m storeroon report lyrics        [--output ...] [--output-dir PATH] [--artist ARTIST]
-    python -m storeroon report replaygain    [--output ...] [--output-dir PATH] [--artist ARTIST]
-    python -m storeroon report all           [--output-dir PATH]
+    python -m storeroon report generate summary
+    python -m storeroon report generate overview      [--output terminal|json] [--report-dir PATH]
+    python -m storeroon report generate technical     [--output ...] [--report-dir PATH]
+    python -m storeroon report generate album-issues  ALBUM_DIR [--output ...] [--report-dir PATH]
+    python -m storeroon report generate artists       [--output ...] [--report-dir PATH]
+    python -m storeroon report generate genres        [--output ...] [--report-dir PATH]
+    python -m storeroon report generate lyrics        [--output ...] [--report-dir PATH] [--artist ARTIST]
+    python -m storeroon report generate replaygain    [--output ...] [--report-dir PATH] [--artist ARTIST]
+    python -m storeroon report generate all           [--report-dir PATH]
+    python -m storeroon report serve                  [--port 8080] [--report-dir PATH] [--generate]
 """
 
 from __future__ import annotations
@@ -81,11 +78,11 @@ def _check_empty(conn: sqlite3.Connection) -> bool:
     return row is None or row[0] == 0
 
 
-def _resolve_output_dir(args: argparse.Namespace, conf: cfg.Config) -> Path:
-    """Resolve the output directory from CLI args or config."""
-    if hasattr(args, "output_dir") and args.output_dir:
-        return Path(args.output_dir).expanduser().resolve()
-    return conf.reports.output_dir.expanduser().resolve()
+def _resolve_report_dir(args: argparse.Namespace, conf: cfg.Config) -> Path:
+    """Resolve the report directory from CLI args or config."""
+    if hasattr(args, "report_dir") and args.report_dir:
+        return Path(args.report_dir).expanduser().resolve()
+    return conf.reports.report_dir.expanduser().resolve()
 
 
 def _get_output_format(args: argparse.Namespace) -> str:
@@ -145,7 +142,7 @@ def _write_json(
     """Write a JSON report file and print the result."""
     from storeroon.reports.renderers.json_renderer import write_report
 
-    output_dir = _resolve_output_dir(args, conf)
+    output_dir = _resolve_report_dir(args, conf)
     written = write_report(output_dir, report_name, data, filters=filters)
     _print_written_files([written])
 
@@ -544,24 +541,23 @@ def _cmd_replaygain(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_all(args: argparse.Namespace) -> int:
-    """Execute ``report all`` — generate all 12 reports as JSON."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
+def _generate_all_reports(conf: cfg.Config, report_dir: Path) -> tuple[int, list[Path]]:
+    """Generate all reports as JSON to *report_dir*.
 
+    Returns (exit_code, list_of_written_paths).  Shared by ``report generate all``
+    and ``report serve --generate``.
+    """
     conn = _open_db(conf)
     if conn is None:
-        return 0
+        return 0, []
 
     if _check_empty(conn):
         output_console.print(
             "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
         )
         conn.close()
-        return 0
+        return 0, []
 
-    output_dir = _resolve_output_dir(args, conf)
     threshold = conf.reports.fuzzy_threshold
     all_written: list[Path] = []
 
@@ -597,15 +593,25 @@ def _cmd_all(args: argparse.Namespace) -> int:
         console.print(f"[dim]  {i:2d}/{len(report_specs)}  {label}…[/dim]")
         try:
             data = query_fn()
-            path = write_report(output_dir, name, data)
+            path = write_report(report_dir, name, data)
             all_written.append(path)
         except Exception as exc:
             console.print(f"[red]  {label} failed: {exc}[/red]")
 
     conn.close()
+    return 0, all_written
 
-    _print_written_files(all_written)
-    return 0
+
+def _cmd_all(args: argparse.Namespace) -> int:
+    """Execute ``report generate all`` — generate all reports as JSON."""
+    conf = _load_config(args)
+    if conf is None:
+        return 1
+
+    report_dir = _resolve_report_dir(args, conf)
+    exit_code, written = _generate_all_reports(conf, report_dir)
+    _print_written_files(written)
+    return exit_code
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +639,7 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
 
 
 def _add_output_args(parser: argparse.ArgumentParser) -> None:
-    """Add --output and --output-dir arguments to a subcommand parser."""
+    """Add --output and --report-dir arguments to a subcommand parser."""
     parser.add_argument(
         "--output",
         type=str,
@@ -642,10 +648,10 @@ def _add_output_args(parser: argparse.ArgumentParser) -> None:
         help="Output format (default: terminal)",
     )
     parser.add_argument(
-        "--output-dir",
+        "--report-dir",
         type=str,
         default=None,
-        help="Directory for output files (default: from config)",
+        help="Directory for report files (default: from config)",
     )
 
 
@@ -680,43 +686,56 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
 
     Called from the main CLI parser builder.
 
-    Parameters
-    ----------
-    subparsers:
-        The subparsers action from the main argument parser, so that
-        ``report`` becomes a top-level subcommand alongside ``scan``.
+    Structure::
+
+        report
+        ├── generate
+        │   ├── all / summary / overview / ... / replaygain
+        └── serve  [--port] [--report-dir] [--config] [--generate]
     """
     report_parser = subparsers.add_parser(
         "report",
-        help="Generate analysis reports on the imported collection",
+        help="Generate or serve analysis reports",
     )
     report_subs = report_parser.add_subparsers(
         dest="report_command",
+        help="Available commands",
+    )
+
+    # =======================================================================
+    # report generate
+    # =======================================================================
+    generate_parser = report_subs.add_parser(
+        "generate",
+        help="Generate analysis reports on the imported collection",
+    )
+    gen_subs = generate_parser.add_subparsers(
+        dest="generate_command",
         help="Available reports",
     )
 
     # --- all (always JSON, no --output flag) ---
-    p_all = report_subs.add_parser(
+    p_all = gen_subs.add_parser(
         "all",
-        help="Generate all 12 reports as JSON files",
+        help="Generate all reports as JSON files",
     )
     p_all.add_argument(
-        "--output-dir",
+        "--report-dir",
         type=str,
         default=None,
-        help="Directory for output files (default: from config)",
+        help="Directory for report files (default: from config)",
     )
     _add_config_arg(p_all)
 
     # --- summary (terminal-only, no --output) ---
-    p_summary = report_subs.add_parser(
+    p_summary = gen_subs.add_parser(
         "summary",
         help="Fast health-check summary across all report areas (terminal only)",
     )
     _add_config_arg(p_summary)
 
     # --- overview ---
-    p_overview = report_subs.add_parser(
+    p_overview = gen_subs.add_parser(
         "overview",
         help="Collection overview: totals, hierarchical artist breakdown",
     )
@@ -724,7 +743,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_overview)
 
     # --- collection-issues ---
-    p_collection_issues = report_subs.add_parser(
+    p_collection_issues = gen_subs.add_parser(
         "collection-issues",
         help="Collection issues overview: album health, track health, tag quality bars",
     )
@@ -732,7 +751,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_collection_issues)
 
     # --- technical ---
-    p_technical = report_subs.add_parser(
+    p_technical = gen_subs.add_parser(
         "technical",
         help="Audio technical quality: sample rate, bitrate, duration outliers",
     )
@@ -740,7 +759,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_technical)
 
     # --- key-inventory ---
-    p_key_inventory = report_subs.add_parser(
+    p_key_inventory = gen_subs.add_parser(
         "key-inventory",
         help="Key inventory: all tag keys with classification",
     )
@@ -748,7 +767,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_key_inventory)
 
     # --- album-issues ---
-    p_album_issues = report_subs.add_parser(
+    p_album_issues = gen_subs.add_parser(
         "album-issues",
         help="Detailed issues for a specific album",
     )
@@ -761,7 +780,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_album_issues)
 
     # --- artists ---
-    p_artists = report_subs.add_parser(
+    p_artists = gen_subs.add_parser(
         "artists",
         help="Artist name consistency: case variants, fuzzy matches",
     )
@@ -769,7 +788,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_artists)
 
     # --- genres ---
-    p_genres = report_subs.add_parser(
+    p_genres = gen_subs.add_parser(
         "genres",
         help="Genre analysis: values, fuzzy matches, missing tags",
     )
@@ -777,7 +796,7 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_genres)
 
     # --- lyrics ---
-    p_lyrics = report_subs.add_parser(
+    p_lyrics = gen_subs.add_parser(
         "lyrics",
         help="Lyrics coverage by artist and album",
     )
@@ -786,13 +805,82 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_config_arg(p_lyrics)
 
     # --- replaygain ---
-    p_replaygain = report_subs.add_parser(
+    p_replaygain = gen_subs.add_parser(
         "replaygain",
         help="ReplayGain tag coverage, partial albums, outliers",
     )
     _add_output_args(p_replaygain)
     _add_artist_args(p_replaygain)
     _add_config_arg(p_replaygain)
+
+    # =======================================================================
+    # report serve
+    # =======================================================================
+    serve_parser = report_subs.add_parser(
+        "serve",
+        help="Start a local web server to browse HTML reports",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)",
+    )
+    serve_parser.add_argument(
+        "--report-dir",
+        type=str,
+        default=None,
+        help="Directory containing report JSON files (default: from config)",
+    )
+    serve_parser.add_argument(
+        "--generate",
+        action="store_true",
+        default=False,
+        help="Regenerate all reports before serving",
+    )
+    _add_config_arg(serve_parser)
+
+
+# ---------------------------------------------------------------------------
+# Serve command
+# ---------------------------------------------------------------------------
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    """Start the local web server for browsing HTML reports."""
+    from storeroon.server import run_server
+
+    conf = _load_config(args)
+    if conf is None:
+        return 1
+
+    report_dir = _resolve_report_dir(args, conf)
+
+    # If --generate is set, regenerate all reports first.
+    if getattr(args, "generate", False):
+        console.print("[bold cyan]Generating reports…[/bold cyan]")
+        exit_code, written = _generate_all_reports(conf, report_dir)
+        if exit_code != 0:
+            return exit_code
+        _print_written_files(written)
+        console.print()
+
+    if not report_dir.is_dir():
+        console.print(
+            f"[yellow]Report directory does not exist: {report_dir}\n"
+            f"Run [bold]storeroon report generate all[/bold] first, "
+            f"or use [bold]--generate[/bold] to generate reports automatically.[/yellow]"
+        )
+        return 1
+
+    db_path = conf.database.path.expanduser().resolve()
+    aliases = conf.tags.aliases
+    canonical_keys = frozenset(conf.tags.required + conf.tags.recommended)
+    run_server(
+        report_dir, port=args.port, db_path=db_path,
+        aliases=aliases, canonical_keys=canonical_keys,
+    )
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -803,41 +891,52 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
 def dispatch_report(args: argparse.Namespace) -> int:
     """Dispatch a ``report`` subcommand.
 
-    Parameters
-    ----------
-    args:
-        The parsed arguments from the main CLI parser. Must have a
-        ``report_command`` attribute indicating which report to run.
-
-    Returns
-    -------
-    int
-        Exit code (0 for success).
+    Routes to either ``report generate <name>`` or ``report serve``.
     """
     report_cmd = getattr(args, "report_command", None)
     if report_cmd is None:
         console.print(
             "[yellow]No report subcommand specified. "
-            "Use [bold]storeroon report --help[/bold] for available reports.[/yellow]"
+            "Use [bold]storeroon report --help[/bold] for available commands.[/yellow]"
         )
         return 1
 
-    # Validate --album without --artist.
-    album_filter = _get_album_filter(args)
-    artist_filter = _get_artist_filter(args)
-    if album_filter and not artist_filter:
-        console.print(
-            "[bold red]Error:[/bold red] --album can only be used in combination "
-            "with --artist. Please specify --artist as well."
-        )
-        return 1
+    # --- report serve ---
+    if report_cmd == "serve":
+        return _cmd_serve(args)
 
-    handler = _REPORT_COMMANDS.get(report_cmd)
-    if handler is None:
-        console.print(
-            f"[bold red]Unknown report subcommand:[/bold red] {report_cmd}. "
-            f"Use [bold]storeroon report --help[/bold] for available reports."
-        )
-        return 1
+    # --- report generate <name> ---
+    if report_cmd == "generate":
+        gen_cmd = getattr(args, "generate_command", None)
+        if gen_cmd is None:
+            console.print(
+                "[yellow]No report specified. "
+                "Use [bold]storeroon report generate --help[/bold] for available reports.[/yellow]"
+            )
+            return 1
 
-    return handler(args)
+        # Validate --album without --artist.
+        album_filter = _get_album_filter(args)
+        artist_filter = _get_artist_filter(args)
+        if album_filter and not artist_filter:
+            console.print(
+                "[bold red]Error:[/bold red] --album can only be used in combination "
+                "with --artist. Please specify --artist as well."
+            )
+            return 1
+
+        handler = _REPORT_COMMANDS.get(gen_cmd)
+        if handler is None:
+            console.print(
+                f"[bold red]Unknown report:[/bold red] {gen_cmd}. "
+                f"Use [bold]storeroon report generate --help[/bold] for available reports."
+            )
+            return 1
+
+        return handler(args)
+
+    console.print(
+        f"[bold red]Unknown report subcommand:[/bold red] {report_cmd}. "
+        f"Use [bold]storeroon report --help[/bold] for available commands."
+    )
+    return 1
