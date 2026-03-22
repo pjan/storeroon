@@ -2,9 +2,9 @@
 storeroon.reports — analysis and reporting layer.
 
 This package provides read-only analysis of the collection database,
-producing reports across 13 areas: overview, technical quality, tag
-coverage, tag formats, album consistency, external IDs, duplicates,
-scan issues, artist consistency, genres, lyrics, and ReplayGain.
+producing reports across these areas: collection overview, collection
+issues, technical quality, key inventory, artist consistency, genres,
+lyrics, and ReplayGain.
 
 Architecture:
     Layer 1 — Query layer (``reports.queries.*``):

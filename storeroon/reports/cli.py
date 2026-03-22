@@ -177,7 +177,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         artists,
         genres,
         lyrics,
-        overview2,
+        overview,
         replaygain,
         technical,
     )
@@ -188,7 +188,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
     console.print("[dim]Gathering summary data…[/dim]")
 
     try:
-        summary.overview = overview2.summary_data(conn)
+        summary.overview = overview.summary_data(conn)
     except Exception as exc:
         log.warning("Overview summary failed: %s", exc)
 
@@ -244,11 +244,11 @@ def _cmd_overview(args: argparse.Namespace) -> int:
         conn.close()
         return 0
 
-    from storeroon.reports.queries import overview2
+    from storeroon.reports.queries import overview
 
     _aliases = conf.tags.aliases
     _canonical = frozenset(conf.tags.required + conf.tags.recommended)
-    data = overview2.full_data(conn, aliases=_aliases, canonical_keys=_canonical)
+    data = overview.full_data(conn, aliases=_aliases, canonical_keys=_canonical)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
@@ -571,7 +571,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
         lyrics,
         collection_issues,
         key_inventory,
-        overview2,
+        overview,
         replaygain,
         technical,
     )
@@ -579,7 +579,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
 
     # (label, report_name, query_fn_call)
     report_specs: list[tuple[str, str, Callable[[], object]]] = [
-        ("Overview", "overview", lambda: overview2.full_data(conn, aliases=conf.tags.aliases, canonical_keys=frozenset(conf.tags.required + conf.tags.recommended))),
+        ("Overview", "overview", lambda: overview.full_data(conn, aliases=conf.tags.aliases, canonical_keys=frozenset(conf.tags.required + conf.tags.recommended))),
         ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Key inventory", "key_inventory", lambda: key_inventory.full_data(conn, conf.tags)),

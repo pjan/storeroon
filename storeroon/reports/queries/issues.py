@@ -4,16 +4,9 @@ storeroon.reports.queries.issues — Report 9: Scan issues (album-centric).
 Reads from the ``scan_issues`` table populated during Phase 1 import.
 All queries filtered by ``resolved = FALSE`` by default.
 
-Album-level aggregation:
-    - Groups issues by album (using album directory path)
-    - Shows artist, album, catalog number for each album
-    - Aggregates counts by severity (error, warning, info)
-    - Provides drill-down to file-level details for each album
-
 Public API:
-    full_data(conn, min_severity="info") -> IssuesFullData
     album_detail(conn, album_dir: str) -> AlbumIssuesDetail
-    summary_data(conn) -> IssuesSummaryData
+    album_report(conn, album_dir: str, ...) -> AlbumReportData
 """
 
 from __future__ import annotations
@@ -25,16 +18,13 @@ import json
 
 from storeroon.reports.models import (
     AlbumIssuesDetail,
-    AlbumIssuesSummary,
     AlbumLevelIssue,
     AlbumReportData,
     FileIssueDetail,
-    IssuesFullData,
-    IssuesSummaryData,
     TrackDetail,
     TrackIssue,
 )
-from storeroon.reports.utils import severity_at_least, severity_order
+from storeroon.reports.utils import severity_order
 
 # ---------------------------------------------------------------------------
 # SQL queries
@@ -71,23 +61,6 @@ ORDER BY
     END,
     f.path
 """
-
-# Count of open issues grouped by severity
-_ISSUES_BY_SEVERITY_SQL = """
-SELECT severity, COUNT(*) AS cnt
-FROM scan_issues
-WHERE resolved = 0
-GROUP BY severity
-ORDER BY
-    CASE severity
-        WHEN 'critical' THEN 0
-        WHEN 'error'    THEN 1
-        WHEN 'warning'  THEN 2
-        WHEN 'info'     THEN 3
-        ELSE 4
-    END
-"""
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -132,113 +105,9 @@ def _fetch_all_issues(conn: sqlite3.Connection) -> list[dict]:
     return result
 
 
-def _filter_by_severity(
-    issues: list[dict],
-    min_severity: str,
-) -> list[dict]:
-    """Filter issues to those at or above the given minimum severity."""
-    return [i for i in issues if severity_at_least(i["severity"], min_severity)]
-
-
-def _aggregate_by_album(issues: list[dict]) -> dict[str, dict]:
-    """Aggregate issues by album directory.
-
-    Returns a dict mapping album_dir to album metadata + severity counts.
-    """
-    albums: dict[str, dict] = {}
-
-    for issue in issues:
-        album_dir = _album_dir_from_path(issue["file_path"])
-
-        if album_dir not in albums:
-            albums[album_dir] = {
-                "album_dir": album_dir,
-                "artist": issue["artist"],
-                "album": issue["album"],
-                "catalog_number": issue["catalog_number"],
-                "error_count": 0,
-                "warning_count": 0,
-                "info_count": 0,
-                "total_count": 0,
-                "file_ids": set(),
-            }
-
-        # Count by severity
-        severity = issue["severity"]
-        if severity in ("critical", "error"):
-            albums[album_dir]["error_count"] += 1
-        elif severity == "warning":
-            albums[album_dir]["warning_count"] += 1
-        elif severity == "info":
-            albums[album_dir]["info_count"] += 1
-
-        albums[album_dir]["total_count"] += 1
-        if issue["file_id"]:
-            albums[album_dir]["file_ids"].add(issue["file_id"])
-
-    return albums
-
-
-def _build_album_summaries(albums_dict: dict[str, dict]) -> list[AlbumIssuesSummary]:
-    """Convert album aggregation dict to sorted list of AlbumIssuesSummary."""
-    summaries = []
-    for album_data in albums_dict.values():
-        summaries.append(
-            AlbumIssuesSummary(
-                artist=album_data["artist"],
-                album=album_data["album"],
-                catalog_number=album_data["catalog_number"],
-                album_dir=album_data["album_dir"],
-                error_count=album_data["error_count"],
-                warning_count=album_data["warning_count"],
-                info_count=album_data["info_count"],
-                total_count=album_data["total_count"],
-            )
-        )
-
-    # Sort by severity: most errors first, then warnings, then total count
-    summaries.sort(key=lambda a: (-a.error_count, -a.warning_count, -a.total_count))
-
-    return summaries
-
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-
-
-def full_data(
-    conn: sqlite3.Connection,
-    *,
-    min_severity: str = "info",
-) -> IssuesFullData:
-    """Return the complete dataset for ``report issues`` (album overview).
-
-    Parameters
-    ----------
-    conn:
-        An open SQLite connection to the storeroon database.
-    min_severity:
-        Minimum severity to include: ``'info'``, ``'warning'``, ``'error'``,
-        or ``'critical'``. Issues below this threshold are excluded.
-    """
-    all_issues = _fetch_all_issues(conn)
-    filtered = _filter_by_severity(all_issues, min_severity)
-
-    albums_dict = _aggregate_by_album(filtered)
-    album_summaries = _build_album_summaries(albums_dict)
-
-    # Count unique files with issues
-    all_file_ids = set()
-    for album_data in albums_dict.values():
-        all_file_ids.update(album_data["file_ids"])
-
-    return IssuesFullData(
-        total_albums=len(album_summaries),
-        total_files_with_issues=len(all_file_ids),
-        total_issues=len(filtered),
-        albums=album_summaries,
-    )
 
 
 def album_detail(
@@ -330,34 +199,6 @@ def album_detail(
         warning_count=warning_count,
         info_count=info_count,
         issues=file_issues,
-    )
-
-
-def summary_data(conn: sqlite3.Connection) -> IssuesSummaryData:
-    """Return headline metrics only for the ``summary`` command.
-
-    Total albums with issues, total issues, count by severity, top 5 albums.
-    """
-    all_issues = _fetch_all_issues(conn)
-
-    # Count by severity
-    sev_rows = conn.execute(_ISSUES_BY_SEVERITY_SQL).fetchall()
-    by_severity: dict[str, int] = {}
-    for r in sev_rows:
-        by_severity[r["severity"]] = r["cnt"]
-
-    # Aggregate by album
-    albums_dict = _aggregate_by_album(all_issues)
-    album_summaries = _build_album_summaries(albums_dict)
-
-    # Top 5 albums by issue count
-    top_albums = album_summaries[:5]
-
-    return IssuesSummaryData(
-        total_albums_with_issues=len(album_summaries),
-        total_issues=len(all_issues),
-        by_severity=by_severity,
-        top_albums=top_albums,
     )
 
 

@@ -24,16 +24,6 @@ class BucketCount:
     percentage: float  # 0.0–100.0
 
 
-@dataclass(frozen=True, slots=True)
-class TagCoverageRow:
-    """Coverage stats for a single tag key within a group."""
-
-    tag_key: str
-    present_count: int
-    present_pct: float
-    missing_count: int  # empty + absent combined
-    missing_pct: float
-
 
 @dataclass(frozen=True, slots=True)
 class AliasUsageRow:
@@ -69,24 +59,6 @@ class KeyInventoryFullData:
     inventory: list[TagInventoryRow]
 
 
-@dataclass(frozen=True, slots=True)
-class FieldValidationRow:
-    """Validation summary for a single field in the tag-formats report."""
-
-    field_name: str
-    valid_count: int
-    valid_pct: float
-    invalid_count: int
-    invalid_pct: float
-    absent_count: int
-    absent_pct: float
-
-
-@dataclass(frozen=True, slots=True)
-class InvalidValueRow:
-    """A distinct invalid value found during format validation."""
-
-    value: str
     count: int
 
 
@@ -256,213 +228,10 @@ class TechnicalSummaryData:
 
 
 # =========================================================================
-# Tag coverage (legacy models)
-# =========================================================================
-
-
-@dataclass(frozen=True, slots=True)
-class TagCoverageFullData:
-    """Complete data for the tag coverage report."""
-
-    total_files: int
-    required_coverage: list[TagCoverageRow]
-    recommended_coverage: list[TagCoverageRow]
-    other_coverage: list[TagCoverageRow]
-    alias_usage: list[AliasUsageRow]
-    full_inventory: list[TagInventoryRow]
-    unknown_keys: list[TagInventoryRow]
-
-
-@dataclass(frozen=True, slots=True)
-class TagCoverageSummaryData:
-    """Summary data for tag coverage in the summary command."""
-
-    total_files: int
-    required_with_missing: list[TagCoverageRow]  # required tags with any missing
-    recommended_high_missing: list[TagCoverageRow]  # recommended with >20% missing
-    unknown_key_count: int
-    top_unknown_keys: list[TagInventoryRow]  # top 5 unknown by file count
-
-
-# =========================================================================
-# Tag quality (legacy models)
-# =========================================================================
-
-
-@dataclass(frozen=True, slots=True)
-class FieldFormatSection:
-    """Validation results for a single field with a format validator."""
-
-    field_name: str
-    summary: FieldValidationRow
-    invalid_values: list[InvalidValueRow]
-    invalid_values_total: int  # total count if capped at 20
-
-
-@dataclass(frozen=True, slots=True)
-class DateQualityRow:
-    """Date format quality for a single date field (DATE or ORIGINALDATE)."""
-
-    field_name: str
-    full_date_count: int
-    year_only_count: int
-    invalid_count: int
-    missing_count: int
-
-
-# =========================================================================
-# Album consistency (legacy models)
-# =========================================================================
-
-
-@dataclass(frozen=True, slots=True)
-class FieldConsistencyViolation:
-    """A single (album_dir, field) pair where inconsistency was found."""
-
-    album_dir: str
-    field_name: str
-    distinct_values: list[str]
-    track_counts_per_value: dict[str, int]  # value → count
-    null_track_count: int  # tracks where the field is absent
-
-
-@dataclass(frozen=True, slots=True)
-class TrackNumberingViolation:
-    """A single track numbering problem in an album directory."""
-
-    album_dir: str
-    check_type: str  # e.g. "missing_track", "duplicate_track", "exceeds_total", "totaltracks_mismatch", "missing_disc"
-    description: str
-
-
-@dataclass(frozen=True, slots=True)
-class ConsistencyViolationSummary:
-    """Count of albums affected by each check type."""
-
-    check_type: str
-    album_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class AlbumConsistencyFullData:
-    """Complete data for the album consistency report."""
-
-    total_albums: int
-    albums_with_violations: int
-    field_violations: list[FieldConsistencyViolation]
-    numbering_violations: list[TrackNumberingViolation]
-    summary_by_type: list[ConsistencyViolationSummary]
-
-
-@dataclass(frozen=True, slots=True)
-class AlbumConsistencySummaryData:
-    """Summary data for album consistency in the summary command."""
-
-    total_albums: int
-    albums_with_violations: int
-    top_violation_types: list[ConsistencyViolationSummary]
-
-
-@dataclass(frozen=True, slots=True)
-class IdCoverageRow:
-    """Coverage for a single ID tag key."""
-
-    tag_key: str
-    valid_count: int
-    valid_pct: float
-    malformed_count: int
-    malformed_pct: float
-    absent_count: int
-    absent_pct: float
-
-
-@dataclass(frozen=True, slots=True)
-class PartialAlbumCoverage:
-    """An album where an ID tag is present on some tracks but not all."""
-
-    album_dir: str
-    tracks_with_id: int
-    tracks_without_id: int
-    total_tracks: int
-
-
-@dataclass(frozen=True, slots=True)
-class DuplicateIdEntry:
-    """A duplicate ID value across multiple files."""
-
-    id_value: str
-    file_count: int
-    file_paths: list[str]
-    same_directory: bool
-
-
-@dataclass(frozen=True, slots=True)
-class BackfillCandidate:
-    """Stats for quick-win backfill."""
-
-    description: str
-    affected_tracks: int
-    distinct_source_ids: int  # unique album IDs / release IDs = API call count
-
-
-@dataclass(frozen=True, slots=True)
-class IdSectionData:
-    """Data for one ID source section (MusicBrainz or Discogs)."""
-
-    source_name: str  # "MusicBrainz" or "Discogs"
-    coverage: list[IdCoverageRow]
-    partial_albums: list[PartialAlbumCoverage]
-    duplicate_ids: list[DuplicateIdEntry]
-    backfill: BackfillCandidate | None
-
-
-@dataclass(frozen=True, slots=True)
-class TagGroupQuality:
-    """Format validation results for a config tag group (required/recommended/other)."""
-
-    group_name: str  # "Required Tags", "Recommended Tags", "Other Tracked Tags"
-    fields: list[FieldFormatSection]
-
-
-@dataclass(frozen=True, slots=True)
-class TagQualityFullData:
-    """Complete data for the tag quality and integrity report."""
-
-    total_files: int
-    date_quality: list[DateQualityRow]  # DATE, ORIGINALDATE precision
-    groups: list[TagGroupQuality]  # grouped by config section (only validated tags)
-    musicbrainz: IdSectionData
-    discogs: IdSectionData
-
-
-@dataclass(frozen=True, slots=True)
-class TagQualitySummaryData:
-    """Summary data for tag quality in the summary command."""
-
-    fields_with_invalid: list[FieldValidationRow]
-    mb_overall_coverage_pct: float
-    mb_malformed_count: int
-    discogs_overall_coverage_pct: float
-    discogs_malformed_count: int
-
-
-# =========================================================================
 # Scan issues
 # =========================================================================
 
 
-@dataclass(frozen=True, slots=True)
-class AlbumIssuesSummary:
-    """Issue counts for a single album, aggregated by severity."""
-
-    artist: str
-    album: str
-    catalog_number: str | None
-    album_dir: str  # Directory path for linking
-    error_count: int
-    warning_count: int
-    info_count: int
-    total_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -544,26 +313,6 @@ class AlbumReportData:
     info_count: int
     album_level_issues: list[AlbumLevelIssue]
     tracks: list[TrackDetail]
-
-
-@dataclass(frozen=True, slots=True)
-class IssuesFullData:
-    """Complete data for the scan issues report (album-level overview)."""
-
-    total_albums: int
-    total_files_with_issues: int
-    total_issues: int
-    albums: list[AlbumIssuesSummary]  # All albums with issues, sorted by severity
-
-
-@dataclass(frozen=True, slots=True)
-class IssuesSummaryData:
-    """Summary data for scan issues in the summary command."""
-
-    total_albums_with_issues: int
-    total_issues: int
-    by_severity: dict[str, int]  # severity → count
-    top_albums: list[AlbumIssuesSummary]  # top 5 albums by issue count
 
 
 # =========================================================================

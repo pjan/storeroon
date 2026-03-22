@@ -1,8 +1,7 @@
 """
-storeroon.reports.queries.overview2 — Collection overview.
+storeroon.reports.queries.overview — Collection overview.
 
-Same folder-based hierarchy as overview, but enriched with per-album
-issue counts from scan_issues.
+Folder-based hierarchical breakdown enriched with per-album issue counts.
 
 Public API:
     full_data(conn) -> OverviewFullData
