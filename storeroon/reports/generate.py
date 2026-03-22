@@ -160,7 +160,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         lyrics,
         overview,
         replaygain,
-        technical,
     )
     from storeroon.reports.renderers.terminal import render_master_summary
 
@@ -172,11 +171,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         summary.overview = overview.summary_data(conn)
     except Exception as exc:
         log.warning("Overview summary failed: %s", exc)
-
-    try:
-        summary.technical = technical.summary_data(conn)
-    except Exception as exc:
-        log.warning("Technical summary failed: %s", exc)
 
     try:
         summary.artists = artists.summary_data(
@@ -268,38 +262,6 @@ def _cmd_collection_issues(args: argparse.Namespace) -> int:
         output_console.print("[yellow]Collection issues overview is HTML-only. Use --output json and storeroon report serve.[/yellow]")
     else:
         _write_json(args, conf, "collection_issues", data)
-
-    conn.close()
-    return 0
-
-
-def _cmd_technical(args: argparse.Namespace) -> int:
-    """Execute ``report generate technical``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import technical
-    from storeroon.reports.renderers.terminal import render_technical
-
-    data = technical.full_data(conn)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_technical(output_console, data)
-    else:
-        _write_json(args, conf, "technical", data)
 
     conn.close()
     return 0
@@ -558,7 +520,6 @@ def generate_all_reports(conf: cfg.Config, report_dir: Path) -> tuple[int, list[
         key_inventory,
         overview,
         replaygain,
-        technical,
     )
     from storeroon.reports.renderers.json_renderer import write_report
 
@@ -566,7 +527,6 @@ def generate_all_reports(conf: cfg.Config, report_dir: Path) -> tuple[int, list[
     report_specs: list[tuple[str, str, Callable[[], object]]] = [
         ("Overview", "overview", lambda: overview.full_data(conn, aliases=conf.tags.aliases, canonical_keys=frozenset(conf.tags.required + conf.tags.recommended))),
         ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
-        ("Technical", "technical", lambda: technical.full_data(conn)),
         ("Key inventory", "key_inventory", lambda: key_inventory.full_data(conn, conf.tags)),
         (
             "Artists",
@@ -612,7 +572,6 @@ REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "summary": _cmd_summary,
     "overview": _cmd_overview,
     "collection-issues": _cmd_collection_issues,
-    "technical": _cmd_technical,
     "key-inventory": _cmd_key_inventory,
     "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,

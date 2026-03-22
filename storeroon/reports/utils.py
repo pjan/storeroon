@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 REPORT_NAMES: tuple[str, ...] = (
     "overview",
     "collection_issues",
-    "technical",
     "key_inventory",
     "artists",
     "genres",
@@ -388,6 +387,34 @@ def parse_replaygain_db(value: str) -> float | None:
         return float(value)
     except (ValueError, OverflowError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Suspicious vendor detection
+# ---------------------------------------------------------------------------
+
+SUSPICIOUS_VENDOR_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pat, re.IGNORECASE)
+    for pat in (
+        r"iTunes",
+        r"LAME",
+        r"Fraunhofer",
+        r"Windows Media",
+        r"AAC",
+        r"MP3",
+        r"Nero",
+        r"QuickTime",
+        r"RealAudio",
+    )
+)
+
+
+def is_suspicious_vendor(vendor: str) -> bool:
+    """Return True if the vendor string matches any suspicious pattern."""
+    for pat in SUSPICIOUS_VENDOR_PATTERNS:
+        if pat.search(vendor):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------

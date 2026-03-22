@@ -310,7 +310,7 @@ def _build_album_health(
                 issue_counts["Alias mismatch"] += 1
 
     # Audio technical quality checks per album
-    from storeroon.reports.queries.technical import _is_suspicious_vendor
+    from storeroon.reports.utils import is_suspicious_vendor
 
     _AUDIO_PROPS_SQL = """
     SELECT fp.bits_per_sample, fp.sample_rate_hz, fp.channels,
@@ -356,7 +356,7 @@ def _build_album_health(
         if len(adir_channels.get(adir, set())) > 1:
             album_issues_found.add("Inconsistent channels")
         for vendor in adir_vendors.get(adir, set()):
-            if _is_suspicious_vendor(vendor):
+            if is_suspicious_vendor(vendor):
                 album_issues_found.add("Suspicious encoder")
                 break
         for label in album_issues_found:

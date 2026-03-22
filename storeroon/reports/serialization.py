@@ -21,7 +21,6 @@ from storeroon.reports.models import (
     LyricsFullData,
     OverviewFullData,
     ReplayGainFullData,
-    TechnicalFullData,
 )
 
 T = TypeVar("T")
@@ -33,7 +32,6 @@ T = TypeVar("T")
 REPORT_DATA_CLASSES: dict[str, type] = {
     "overview": OverviewFullData,
     "collection_issues": CollectionIssuesFullData,
-    "technical": TechnicalFullData,
     "key_inventory": KeyInventoryFullData,
     "artists": ArtistsFullData,
     "genres": GenresFullData,

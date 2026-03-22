@@ -9,7 +9,6 @@ CLI structure::
 
     storeroon report generate summary
     storeroon report generate overview      [--output terminal|json] [--report-dir PATH]
-    storeroon report generate technical     [--output ...] [--report-dir PATH]
     storeroon report generate album-issues  ALBUM_DIR [--output ...] [--report-dir PATH]
     storeroon report generate artists       [--output ...] [--report-dir PATH]
     storeroon report generate genres        [--output ...] [--report-dir PATH]
@@ -157,14 +156,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     _add_output_args(p_collection_issues)
     _add_config_arg(p_collection_issues)
-
-    # --- technical ---
-    p_technical = gen_subs.add_parser(
-        "technical",
-        help="Audio technical quality: sample rate, bitrate, duration outliers",
-    )
-    _add_output_args(p_technical)
-    _add_config_arg(p_technical)
 
     # --- key-inventory ---
     p_key_inventory = gen_subs.add_parser(

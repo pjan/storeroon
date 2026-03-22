@@ -23,7 +23,6 @@ from storeroon.reports.models import (
     OverviewFullData,
     ReplayGainFullData,
     TagBar,
-    TechnicalFullData,
 )
 from storeroon.reports.utils import (
     fmt_count,
@@ -41,7 +40,6 @@ from storeroon.reports.utils import (
 REPORT_TITLES: dict[str, str] = {
     "overview": "Collection Overview",
     "collection_issues": "Collection Issues Overview",
-    "technical": "Audio Technical Quality",
     "key_inventory": "Key Inventory",
     "artists": "Artist Name Consistency",
     "genres": "Genre Analysis",
@@ -155,174 +153,6 @@ def _bucket_table(
 # =========================================================================
 # Collection overview (with scan issues)
 # =========================================================================
-
-
-# =========================================================================
-# Audio technical quality
-# =========================================================================
-
-
-def _histogram_html(
-    title: str,
-    buckets: list[BucketCount],
-    bar_cls: str | None = None,
-) -> str:
-    """Build an HTML histogram bar chart from BucketCount instances."""
-    if not buckets:
-        return ""
-    max_pct = max(b.percentage for b in buckets) or 1.0
-    bars: list[str] = []
-    labels: list[str] = []
-    for b in buckets:
-        height_pct = (b.percentage / max_pct * 100.0) if max_pct > 0 else 0
-        cls = f"histogram-bar {bar_cls}" if bar_cls else "histogram-bar"
-        tooltip = f"{fmt_count(b.count)} ({fmt_pct(b.percentage)})"
-        bars.append(
-            f'<div class="{cls}" style="height:{height_pct:.1f}%"'
-            f' title="{b.label}: {tooltip}">'
-            f'<span class="tooltip">{b.label}: {tooltip}</span>'
-            f"</div>"
-        )
-        labels.append(f"<span>{b.label}</span>")
-
-    return (
-        f'<div class="histogram-wrapper">'
-        f"<h4>{title}</h4>"
-        f'<div class="histogram">{"".join(bars)}</div>'
-        f'<div class="histogram-labels">{"".join(labels)}</div>'
-        f"</div>"
-    )
-
-
-def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-
-    sections.append(
-        _section(
-            "Audio Technical Quality",
-            summary_cards=[
-                _card(fmt_count(data.total_files), "Total Files"),
-                _card(fmt_count(len(data.duration_outliers)), "Duration Outliers"),
-                _card(
-                    fmt_count(sum(1 for v in data.vendors if v.is_suspicious)),
-                    "Suspicious Encoders",
-                ),
-                _card(
-                    f"{fmt_count(data.missing_md5_count)} ({fmt_pct(data.missing_md5_pct)})",
-                    "Missing audio_md5",
-                ),
-            ],
-        )
-    )
-
-    charts: list[str] = []
-    for label, buckets in [
-        ("Sample Rate", data.sample_rate_distribution),
-        ("Bit Depth", data.bit_depth_distribution),
-        ("Channels", data.channel_distribution),
-        ("Approximate Bitrate (kbps)", data.bitrate_distribution),
-        ("File Size", data.file_size_distribution),
-        ("Track Duration", data.duration_distribution),
-    ]:
-        charts.append(_histogram_html(label, buckets))
-
-    if charts:
-        grid_html = f'<div class="histogram-grid">{"".join(charts)}</div>'
-        sections.append(_section("Distributions", text_blocks=[_text(grid_html)]))
-
-    if data.duration_outliers:
-        outlier_rows: list[list[dict[str, Any]]] = []
-        for o in data.duration_outliers:
-            otype_cls = (
-                "severity-error" if o.outlier_type == "short" else "severity-warning"
-            )
-            outlier_rows.append(
-                [
-                    _cell(o.outlier_type.upper(), cls=otype_cls),
-                    _cell(fmt_duration_short(o.duration_seconds), cls="num"),
-                    _cell(o.albumartist),
-                    _cell(o.album),
-                    _cell(o.title),
-                    _cell(o.path, cls="path"),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Duration Outliers ({len(data.duration_outliers)})",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("Type"),
-                            _hdr("Duration", "num"),
-                            _hdr("Artist"),
-                            _hdr("Album"),
-                            _hdr("Title"),
-                            _hdr("Path"),
-                        ],
-                        outlier_rows,
-                    )
-                ],
-            )
-        )
-
-    if data.vendors:
-        vendor_rows: list[list[dict[str, Any]]] = []
-        for v in data.vendors:
-            flag_cls = "flag-error" if v.is_suspicious else "flag-ok"
-            flag_text = "SUSPICIOUS" if v.is_suspicious else "OK"
-            vendor_rows.append(
-                [
-                    _cell(v.vendor_string, cls="mono"),
-                    _cell(fmt_count(v.count), cls="num"),
-                    _cell(f'<span class="flag {flag_cls}">{flag_text}</span>'),
-                ]
-            )
-        sections.append(
-            _section(
-                "Encoder Provenance",
-                tables=[
-                    _table(
-                        None,
-                        [_hdr("Vendor String"), _hdr("Count", "num"), _hdr("Status")],
-                        vendor_rows,
-                    )
-                ],
-            )
-        )
-
-    if data.missing_md5_albums:
-        md5_rows: list[list[dict[str, Any]]] = []
-        for a in data.missing_md5_albums:
-            md5_rows.append(
-                [
-                    _cell(a.albumartist),
-                    _cell(a.album),
-                    _cell(a.missing_count, cls="num"),
-                    _cell(a.total_count, cls="num"),
-                    _cell(a.album_dir, cls="path"),
-                ]
-            )
-        sections.append(
-            _section(
-                f"Missing audio_md5 ({fmt_count(data.missing_md5_count)} files)",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("Artist"),
-                            _hdr("Album"),
-                            _hdr("Missing", "num"),
-                            _hdr("Total", "num"),
-                            _hdr("Album Dir"),
-                        ],
-                        md5_rows,
-                    )
-                ],
-            )
-        )
-
-    return sections
 
 
 # =========================================================================
@@ -1335,7 +1165,6 @@ def build_key_inventory_sections(data: Any) -> list[dict[str, Any]]:
 SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "overview": build_overview_sections,
     "collection_issues": build_collection_issues_sections,
-    "technical": build_technical_sections,
     "key_inventory": build_key_inventory_sections,
     "artists": build_artists_sections,
     "genres": build_genres_sections,

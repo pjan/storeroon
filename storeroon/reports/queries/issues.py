@@ -446,7 +446,7 @@ def album_report(
                         warning_count += 1
 
     # ── Audio technical quality checks ──
-    from storeroon.reports.queries.technical import _is_suspicious_vendor
+    from storeroon.reports.utils import is_suspicious_vendor
 
     _ALBUM_AUDIO_SQL = """
     SELECT fp.bits_per_sample, fp.sample_rate_hz, fp.channels, fp.vendor_string
@@ -496,7 +496,7 @@ def album_report(
         error_count += 1
 
     for vendor in sorted(vendors):
-        if _is_suspicious_vendor(vendor):
+        if is_suspicious_vendor(vendor):
             album_level_issues.append(AlbumLevelIssue(severity="info", description=f"Suspicious encoder: {vendor}"))
             info_count += 1
 

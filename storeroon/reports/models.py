@@ -156,75 +156,6 @@ class OverviewFullData:
 
 
 # =========================================================================
-# Audio technical quality
-# =========================================================================
-
-
-@dataclass(frozen=True, slots=True)
-class DurationOutlier:
-    """A track with unusually short or long duration."""
-
-    path: str
-    duration_seconds: float
-    albumartist: str
-    album: str
-    title: str
-    outlier_type: str  # "short" or "long"
-
-
-@dataclass(frozen=True, slots=True)
-class VendorInfo:
-    """A distinct vendor_string with count and suspicion flag."""
-
-    vendor_string: str
-    count: int
-    is_suspicious: bool
-
-
-@dataclass(frozen=True, slots=True)
-class MissingMd5Album:
-    """An album with files missing audio_md5."""
-
-    albumartist: str
-    album: str
-    album_dir: str
-    missing_count: int
-    total_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class TechnicalFullData:
-    """Complete data for the technical quality report."""
-
-    total_files: int
-    sample_rate_distribution: list[BucketCount]
-    bit_depth_distribution: list[BucketCount]
-    channel_distribution: list[BucketCount]
-    bitrate_distribution: list[BucketCount]
-    file_size_distribution: list[BucketCount]
-    duration_distribution: list[BucketCount]
-    duration_outliers: list[DurationOutlier]
-    vendors: list[VendorInfo]
-    missing_md5_count: int
-    missing_md5_pct: float
-    missing_md5_albums: list[MissingMd5Album]
-
-
-@dataclass(frozen=True, slots=True)
-class TechnicalSummaryData:
-    """Summary data for technical quality in the summary command."""
-
-    total_files: int
-    sample_rate_distribution: list[BucketCount]
-    bit_depth_distribution: list[BucketCount]
-    bitrate_distribution: list[BucketCount]
-    duration_outlier_count: int
-    suspicious_vendor_count: int
-    missing_md5_count: int
-    missing_md5_pct: float
-
-
-# =========================================================================
 # Album consistency (used by album_consistency query helpers)
 # =========================================================================
 
@@ -619,7 +550,6 @@ class MasterSummary:
     """All summary-mode data rolled into one object for ``report summary``."""
 
     overview: OverviewSummaryData | None = None
-    technical: TechnicalSummaryData | None = None
     artists: ArtistsSummaryData | None = None
     genres: GenresSummaryData | None = None
     lyrics: LyricsSummaryData | None = None

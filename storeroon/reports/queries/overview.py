@@ -267,7 +267,7 @@ def full_data(
                         albums_with_issues.add(adir)
 
     # ── Phase 2d: Audio technical quality checks per album ──
-    from storeroon.reports.queries.technical import _is_suspicious_vendor
+    from storeroon.reports.utils import is_suspicious_vendor
 
     _AUDIO_PROPS_SQL = """
     SELECT fp.bits_per_sample, fp.sample_rate_hz, fp.channels,
@@ -317,7 +317,7 @@ def full_data(
             total_issues += 1
             albums_with_issues.add(adir)
         for vendor in album_vendors.get(adir, set()):
-            if _is_suspicious_vendor(vendor):
+            if is_suspicious_vendor(vendor):
                 folder_issues[adir]["info"] += 1
                 total_issues += 1
                 albums_with_issues.add(adir)

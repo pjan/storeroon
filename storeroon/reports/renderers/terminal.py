@@ -28,8 +28,6 @@ from storeroon.reports.models import (
     OverviewSummaryData,
     ReplayGainFullData,
     ReplayGainSummaryData,
-    TechnicalFullData,
-    TechnicalSummaryData,
 )
 from storeroon.reports.utils import (
     bar_chart,
@@ -178,165 +176,6 @@ def render_overview_summary(console: Console, data: OverviewSummaryData) -> None
     table.add_row("Duration", fmt_duration_hms(t.total_duration_seconds))
     table.add_row("Size", fmt_size_gb(t.total_size_bytes))
     console.print(table)
-
-
-# =========================================================================
-# Audio technical quality
-# =========================================================================
-
-
-def render_technical(console: Console, data: TechnicalFullData) -> None:
-    """Render the full technical quality report."""
-    if data.total_files == 0:
-        _empty_db_message(console)
-        return
-
-    _section_heading(console, "Audio Technical Quality")
-    console.print(f"Total files analysed: [bold]{fmt_count(data.total_files)}[/bold]")
-
-    # Table 1: Sample rate distribution.
-    console.print(
-        _distribution_table("Sample Rate Distribution", data.sample_rate_distribution)
-    )
-
-    # Table 2: Bit depth distribution.
-    console.print(
-        _distribution_table("Bit Depth Distribution", data.bit_depth_distribution)
-    )
-
-    # Table 3: Channel distribution.
-    console.print(
-        _distribution_table("Channel Distribution", data.channel_distribution)
-    )
-
-    # Table 4: Bitrate distribution.
-    console.print(
-        _distribution_table(
-            "Approximate Bitrate Distribution (kbps)", data.bitrate_distribution
-        )
-    )
-
-    # Table 5: File size distribution.
-    console.print(
-        _distribution_table("File Size Distribution", data.file_size_distribution)
-    )
-
-    # Table 6: Duration distribution.
-    console.print(
-        _distribution_table("Track Duration Distribution", data.duration_distribution)
-    )
-
-    # Table 7: Duration outliers.
-    if data.duration_outliers:
-        _subsection_heading(
-            console, f"Duration Outliers ({len(data.duration_outliers)} tracks)"
-        )
-        outlier_table = Table(show_header=True, header_style="bold")
-        outlier_table.add_column("Type", style="bold")
-        outlier_table.add_column("Duration", justify="right")
-        outlier_table.add_column("Artist")
-        outlier_table.add_column("Album")
-        outlier_table.add_column("Title")
-        outlier_table.add_column("Path", style="dim")
-
-        for o in data.duration_outliers:
-            style = "red" if o.outlier_type == "short" else "yellow"
-            outlier_table.add_row(
-                Text(o.outlier_type.upper(), style=style),
-                fmt_duration_short(o.duration_seconds),
-                o.albumartist,
-                o.album,
-                o.title,
-                o.path,
-            )
-        console.print(outlier_table)
-    else:
-        console.print("[green]No duration outliers found.[/green]")
-
-    # Table 8: Encoder provenance.
-    if data.vendors:
-        _subsection_heading(console, "Encoder Provenance (vendor_string)")
-        vendor_table = Table(show_header=True, header_style="bold")
-        vendor_table.add_column("Vendor String")
-        vendor_table.add_column("Count", justify="right")
-        vendor_table.add_column("Status")
-
-        for v in data.vendors:
-            status = (
-                Text("⚠ SUSPICIOUS", style="bold red")
-                if v.is_suspicious
-                else Text("OK", style="green")
-            )
-            vendor_table.add_row(v.vendor_string, fmt_count(v.count), status)
-        console.print(vendor_table)
-
-    # Table 9: Missing audio_md5.
-    _subsection_heading(console, "Missing audio_md5")
-    console.print(
-        f"Files missing audio_md5: [bold]{fmt_count(data.missing_md5_count)}[/bold] "
-        f"({fmt_pct(data.missing_md5_pct)})"
-    )
-    if data.missing_md5_albums:
-        md5_table = Table(show_header=True, header_style="bold")
-        md5_table.add_column("Artist")
-        md5_table.add_column("Album")
-        md5_table.add_column("Missing", justify="right")
-        md5_table.add_column("Total", justify="right")
-
-        for a in data.missing_md5_albums[:50]:
-            md5_table.add_row(
-                a.albumartist,
-                a.album,
-                str(a.missing_count),
-                str(a.total_count),
-            )
-        if len(data.missing_md5_albums) > 50:
-            console.print(
-                f"[dim]  … and {len(data.missing_md5_albums) - 50} more albums "
-                f"(use --output csv for full list)[/dim]"
-            )
-        console.print(md5_table)
-
-
-def render_technical_summary(console: Console, data: TechnicalSummaryData) -> None:
-    """Render technical summary in summary mode."""
-    if data.total_files == 0:
-        return
-
-    _subsection_heading(console, "🔊 Technical Quality")
-
-    # Sample rate and bit depth as compact tables.
-    for title, buckets in [
-        ("Sample Rate", data.sample_rate_distribution),
-        ("Bit Depth", data.bit_depth_distribution),
-        ("Bitrate (kbps)", data.bitrate_distribution),
-    ]:
-        table = Table(title=title, show_header=True, header_style="bold", expand=False)
-        table.add_column("Bucket", style="cyan")
-        table.add_column("Count", justify="right")
-        table.add_column("%", justify="right")
-        for b in buckets:
-            if b.count > 0:
-                table.add_row(b.label, fmt_count(b.count), fmt_pct(b.percentage))
-        console.print(table)
-
-    # Headline flags.
-    flags: list[str] = []
-    if data.duration_outlier_count > 0:
-        flags.append(
-            f"[yellow]⚠ {data.duration_outlier_count} duration outlier(s)[/yellow]"
-        )
-    if data.suspicious_vendor_count > 0:
-        flags.append(
-            f"[red]⚠ {data.suspicious_vendor_count} file(s) with suspicious encoder[/red]"
-        )
-    if data.missing_md5_count > 0:
-        flags.append(
-            f"[dim]ℹ {data.missing_md5_count} file(s) missing audio_md5 "
-            f"({fmt_pct(data.missing_md5_pct)})[/dim]"
-        )
-    for f in flags:
-        console.print(f"  {f}")
 
 
 # =========================================================================
@@ -904,8 +743,6 @@ def render_master_summary(console: Console, summary: MasterSummary) -> None:
 
     if summary.overview:
         render_overview_summary(console, summary.overview)
-    if summary.technical:
-        render_technical_summary(console, summary.technical)
     if summary.artists:
         render_artists_summary(console, summary.artists)
     if summary.genres:
