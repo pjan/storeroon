@@ -38,15 +38,26 @@ _CONSISTENCY_FIELDS: tuple[str, ...] = (
     "ALBUM",
     "DATE",
     "ORIGINALDATE",
-    "TOTALTRACKS",
-    "TOTALDISCS",
+    "TRACKTOTAL",
+    "DISCTOTAL",
     "LABEL",
     "CATALOGNUMBER",
     "RELEASETYPE",
+    "RELEASESTATUS",
     "MUSICBRAINZ_ALBUMID",
     "MUSICBRAINZ_ALBUMARTISTID",
     "MUSICBRAINZ_RELEASEGROUPID",
 )
+
+# Reverse alias map: canonical → list of alias keys.
+# Used to merge alias values with canonical values in consistency checks.
+_CANONICAL_TO_ALIASES: dict[str, list[str]] = {
+    "DATE": ["YEAR"],
+    "ORIGINALDATE": ["ORIGINALYEAR"],
+    "ALBUMARTIST": ["ALBUM ARTIST"],
+    "TRACKTOTAL": ["TOTALTRACKS"],
+    "DISCTOTAL": ["TOTALDISCS", "DISCS"],
+}
 
 # ---------------------------------------------------------------------------
 # SQL queries
@@ -199,25 +210,35 @@ def _check_field_consistency(
 ) -> FieldConsistencyViolation | None:
     """Check a single field for cross-track consistency in an album directory.
 
+    Also queries alias tag keys for the field and merges values, so that
+    e.g. TRACKTOTAL and TOTALTRACKS are treated as the same concept.
+
     Returns a violation if inconsistency is found, or None.
     """
-    rows = conn.execute(_TAG_VALUES_IN_ALBUM_SQL, (album_dir, field)).fetchall()
+    # Query canonical field + all its aliases, take first non-null per file
+    keys_to_check = [field] + _CANONICAL_TO_ALIASES.get(field, [])
+
+    # Collect per-file: use canonical value if present, else first alias value
+    file_values: dict[int, str] = {}  # file_id → value
+    for key in keys_to_check:
+        rows = conn.execute(_TAG_VALUES_IN_ALBUM_SQL, (album_dir, key)).fetchall()
+        for r in rows:
+            fid = r["file_id"]
+            if fid not in file_values:  # first key wins (canonical first)
+                val = r["tag_value"]
+                if val and val.strip():
+                    file_values[fid] = val.strip()
 
     # Group by normalised value.
     value_counts: Counter[str] = Counter()
-    null_count = 0
     raw_values: dict[str, set[str]] = defaultdict(set)  # normalised → originals
 
-    file_ids_with_tag: set[int] = set()
-    for r in rows:
-        fid = r["file_id"]
-        val = r["tag_value"]
-        file_ids_with_tag.add(fid)
-        normalised = val.strip().lower()
+    for val in file_values.values():
+        normalised = val.lower()
         value_counts[normalised] += 1
-        raw_values[normalised].add(val.strip())
+        raw_values[normalised].add(val)
 
-    null_count = total_tracks_in_dir - len(file_ids_with_tag)
+    null_count = total_tracks_in_dir - len(file_values)
 
     # Check for inconsistency: more than one distinct normalised value,
     # OR a mix of NULL and non-NULL.
@@ -306,7 +327,7 @@ def _check_track_numbering(
                         album_dir=album_dir,
                         check_type="totaltracks_mismatch",
                         description=(
-                            f"TOTALTRACKS declares {declared_tt} but directory "
+                            f"Total tracks declares {declared_tt} but directory "
                             f"contains {total_tracks_in_dir} FLAC files"
                         ),
                     )
@@ -322,13 +343,13 @@ def _check_track_numbering(
                             album_dir=album_dir,
                             check_type="totaltracks_mismatch",
                             description=(
-                                f"Disc {disc_num}: TOTALTRACKS declares "
+                                f"Disc {disc_num}: Total tracks declares "
                                 f"{declared_tt} but disc has {len(tracks)} tracks"
                             ),
                         )
                     )
 
-    # --- Check per-disc: gaps, duplicates, exceeds TOTALTRACKS ---
+    # --- Check per-disc: gaps, duplicates, exceeds total tracks ---
     for disc_num, tracks in sorted(disc_tracks.items()):
         if not tracks:
             continue
@@ -377,7 +398,7 @@ def _check_track_numbering(
                             check_type="exceeds_total",
                             description=(
                                 f"{'Disc ' + str(disc_num) + ': ' if is_multi_disc else ''}"
-                                f"Track number {tn_val} exceeds TOTALTRACKS ({declared_tt})"
+                                f"Track number {tn_val} exceeds total tracks ({declared_tt})"
                             ),
                         )
                     )
@@ -394,7 +415,7 @@ def _check_track_numbering(
                     album_dir=album_dir,
                     check_type="missing_disc",
                     description=(
-                        f"Disc {md} missing (TOTALDISCS declares {declared_td})"
+                        f"Disc {md} missing (Total discs declares {declared_td})"
                     ),
                 )
             )
