@@ -333,6 +333,9 @@ class AlbumReportData:
     error_count: int
     warning_count: int
     info_count: int
+    bit_depth: int | None  # highest bits_per_sample across tracks
+    sample_rate_hz: int | None  # highest sample_rate_hz across tracks
+    channels: int | None  # highest channel count across tracks
     album_level_issues: list[AlbumLevelIssue]
     tracks: list[TrackDetail]
 

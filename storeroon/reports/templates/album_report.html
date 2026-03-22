@@ -146,12 +146,17 @@ h2 {
 }
 .health-label .score { font-size: 1.75rem; font-weight: 800; line-height: 1; }
 .health-label .lbl { font-size: 0.65rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.tally-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+}
 .tally {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
-  flex: 1;
 }
 .pill {
   display: inline-flex;
@@ -172,6 +177,26 @@ h2 {
 .pill-error .dot { background: var(--error); }
 .pill-warning .dot { background: var(--warning); }
 .pill-info .dot { background: var(--info); }
+
+/* Audio quality badges */
+.audio-badges {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.audio-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--bg-alt);
+  color: var(--dim);
+  border: 1px solid var(--border);
+}
 
 /* Album alerts */
 .album-alerts {
@@ -322,14 +347,21 @@ h2 {
       <div class="lbl">Health</div>
     </div>
   </div>
-  <div class="tally">
-    {% if data.critical_count %}<span class="pill pill-critical"><span class="dot"></span>{{ data.critical_count }} Critical</span>{% endif %}
-    {% if data.error_count %}<span class="pill pill-error"><span class="dot"></span>{{ data.error_count }} Error</span>{% endif %}
-    {% if data.warning_count %}<span class="pill pill-warning"><span class="dot"></span>{{ data.warning_count }} Warning</span>{% endif %}
-    {% if data.info_count %}<span class="pill pill-info"><span class="dot"></span>{{ data.info_count }} Info</span>{% endif %}
-    {% if not data.critical_count and not data.error_count and not data.warning_count and not data.info_count %}
-    <span class="pill pill-clean"><span class="dot" style="background:var(--clean)"></span>Clean</span>
-    {% endif %}
+  <div class="tally-block">
+    <div class="audio-badges">
+      {% if data.bit_depth %}<span class="audio-badge">{{ data.bit_depth }}-bit</span>{% endif %}
+      {% if data.channels %}<span class="audio-badge">{{ "Stereo" if data.channels == 2 else ("Mono" if data.channels == 1 else data.channels ~ "ch") }}</span>{% endif %}
+      {% if data.sample_rate_hz %}<span class="audio-badge">{{ "%.1f kHz" | format(data.sample_rate_hz / 1000) }}</span>{% endif %}
+    </div>
+    <div class="tally">
+      {% set required_fixes = data.critical_count + data.error_count %}
+      {% if required_fixes %}<span class="pill pill-error"><span class="dot"></span>{{ required_fixes }} Required Fix{{ "es" if required_fixes != 1 }}</span>{% endif %}
+      {% if data.warning_count %}<span class="pill pill-warning"><span class="dot"></span>{{ data.warning_count }} Recommended Fix{{ "es" if data.warning_count != 1 }}</span>{% endif %}
+      {% if data.info_count %}<span class="pill pill-info"><span class="dot"></span>{{ data.info_count }} Possible Improvement{{ "s" if data.info_count != 1 }}</span>{% endif %}
+      {% if not required_fixes and not data.warning_count and not data.info_count %}
+      <span class="pill pill-clean"><span class="dot" style="background:var(--clean)"></span>Clean</span>
+      {% endif %}
+    </div>
   </div>
 </div>
 

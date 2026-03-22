@@ -445,6 +445,61 @@ def album_report(
                         ))
                         warning_count += 1
 
+    # ── Audio technical quality checks ──
+    from storeroon.reports.queries.technical import _is_suspicious_vendor
+
+    _ALBUM_AUDIO_SQL = """
+    SELECT fp.bits_per_sample, fp.sample_rate_hz, fp.channels, fp.vendor_string
+    FROM flac_properties fp
+    JOIN files f ON f.id = fp.file_id
+    WHERE f.status = 'ok'
+      AND SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) = ?
+    """
+    audio_rows = conn.execute(_ALBUM_AUDIO_SQL, (album_dir,)).fetchall()
+
+    bit_depths: set[int] = set()
+    sample_rates: set[int] = set()
+    channel_counts: set[int] = set()
+    vendors: set[str] = set()
+
+    for ar in audio_rows:
+        if ar["bits_per_sample"]:
+            bit_depths.add(ar["bits_per_sample"])
+        if ar["sample_rate_hz"]:
+            sample_rates.add(ar["sample_rate_hz"])
+        if ar["channels"]:
+            channel_counts.add(ar["channels"])
+        if ar["vendor_string"]:
+            vendors.add(ar["vendor_string"])
+
+    album_bit_depth = max(bit_depths) if bit_depths else None
+    album_sample_rate = max(sample_rates) if sample_rates else None
+    album_channels = max(channel_counts) if channel_counts else None
+
+    if len(bit_depths) > 1:
+        vals = ", ".join(f"{v}-bit" for v in sorted(bit_depths))
+        album_level_issues.append(AlbumLevelIssue(severity="error", description=f"Inconsistent bit depth: {vals}"))
+        error_count += 1
+
+    if len(sample_rates) > 1:
+        vals = ", ".join(f"{v / 1000:.1f} kHz" for v in sorted(sample_rates))
+        album_level_issues.append(AlbumLevelIssue(severity="error", description=f"Inconsistent sample rate: {vals}"))
+        error_count += 1
+
+    if len(channel_counts) > 1:
+        def _ch_label(c: int) -> str:
+            if c == 1: return "Mono"
+            if c == 2: return "Stereo"
+            return f"{c}ch"
+        vals = ", ".join(_ch_label(v) for v in sorted(channel_counts))
+        album_level_issues.append(AlbumLevelIssue(severity="error", description=f"Inconsistent channels: {vals}"))
+        error_count += 1
+
+    for vendor in sorted(vendors):
+        if _is_suspicious_vendor(vendor):
+            album_level_issues.append(AlbumLevelIssue(severity="info", description=f"Suspicious encoder: {vendor}"))
+            info_count += 1
+
     # Build track details
     tracks: list[TrackDetail] = []
     for fid, finfo in file_map.items():
@@ -489,6 +544,9 @@ def album_report(
         error_count=error_count,
         warning_count=warning_count,
         info_count=info_count,
+        bit_depth=album_bit_depth,
+        sample_rate_hz=album_sample_rate,
+        channels=album_channels,
         album_level_issues=album_level_issues,
         tracks=tracks,
     )
