@@ -146,7 +146,11 @@ def _get_validator(tag_key: str) -> Callable[[str], bool] | None:
 # ---------------------------------------------------------------------------
 
 
-def _build_album_health(conn: sqlite3.Connection) -> tuple[list[AlbumHealthBar], int]:
+def _build_album_health(
+    conn: sqlite3.Connection,
+    aliases: dict[str, str] | None = None,
+    canonical_keys: frozenset[str] | None = None,
+) -> tuple[list[AlbumHealthBar], int]:
     """Run album consistency checks across all albums and count affected albums per issue type."""
     from storeroon.reports.queries.album_consistency import (
         _CONSISTENCY_FIELDS,
@@ -156,6 +160,16 @@ def _build_album_health(conn: sqlite3.Connection) -> tuple[list[AlbumHealthBar],
 
     album_rows = conn.execute(_ALL_ALBUM_DIRS_SQL).fetchall()
     total_albums = len(album_rows)
+
+    # Build album_dir → file_ids map for alias checks
+    album_file_ids: dict[str, list[int]] = defaultdict(list)
+    for row in album_rows:
+        # Get file IDs per album
+        fid_rows = conn.execute(
+            "SELECT id FROM files WHERE status = 'ok' AND SUBSTR(path, 1, LENGTH(path) - LENGTH(filename) - 1) = ?",
+            (row["album_dir"],),
+        ).fetchall()
+        album_file_ids[row["album_dir"]] = [r["id"] for r in fid_rows]
 
     # Count albums affected per issue type
     issue_counts: Counter[str] = Counter()
@@ -186,6 +200,50 @@ def _build_album_health(conn: sqlite3.Connection) -> tuple[list[AlbumHealthBar],
         for issue_label in album_issues_found:
             issue_counts[issue_label] += 1
 
+    # Alias consistency: count albums where any file has a mismatch
+    _aliases = aliases or {}
+    _canonical = canonical_keys or frozenset()
+    relevant_pairs: list[tuple[str, str]] = []
+    all_alias_keys: set[str] = set()
+    for alias_key, canon_key in _aliases.items():
+        if canon_key in _canonical:
+            relevant_pairs.append((alias_key, canon_key))
+            all_alias_keys.add(alias_key)
+            all_alias_keys.add(canon_key)
+
+    if relevant_pairs:
+        # Fetch all relevant tags in one query
+        key_placeholders = ",".join(f"'{k}'" for k in all_alias_keys)
+        alias_sql = f"""
+        SELECT rt.file_id, rt.tag_key_upper, rt.tag_value
+        FROM raw_tags rt
+        JOIN files f ON f.id = rt.file_id
+        WHERE f.status = 'ok' AND rt.tag_index = 0
+          AND rt.tag_key_upper IN ({key_placeholders})
+        """
+        alias_rows = conn.execute(alias_sql).fetchall()
+        file_tags: dict[int, dict[str, str]] = defaultdict(dict)
+        for ar in alias_rows:
+            file_tags[ar["file_id"]][ar["tag_key_upper"]] = ar["tag_value"]
+
+        # Check per album
+        for adir, fids in album_file_ids.items():
+            has_mismatch = False
+            for fid in fids:
+                if has_mismatch:
+                    break
+                tags = file_tags.get(fid, {})
+                for alias_key, canon_key in relevant_pairs:
+                    canon_val = tags.get(canon_key)
+                    if not canon_val or not canon_val.strip():
+                        continue
+                    alias_val = tags.get(alias_key)
+                    if not alias_val or not alias_val.strip() or canon_val.strip() != alias_val.strip():
+                        has_mismatch = True
+                        break
+            if has_mismatch:
+                issue_counts["Alias mismatch"] += 1
+
     bars: list[AlbumHealthBar] = []
     for label, count in sorted(issue_counts.items(), key=lambda x: x[1], reverse=True):
         bars.append(AlbumHealthBar(
@@ -198,7 +256,7 @@ def _build_album_health(conn: sqlite3.Connection) -> tuple[list[AlbumHealthBar],
     # Add bars for issue types with zero occurrences (all clean)
     all_possible = (
         ["Missing tracks", "Missing discs", "Duplicate track numbers",
-         "Track count mismatch", "Track number exceeds total"]
+         "Track count mismatch", "Track number exceeds total", "Alias mismatch"]
         + [f"Inconsistent {f}" for f in _CONSISTENCY_FIELDS]
     )
     seen = {b.issue_label for b in bars}
@@ -316,8 +374,11 @@ def full_data(
     total_files_row = conn.execute(_TOTAL_OK_FILES_SQL).fetchone()
     total_files = total_files_row[0] if total_files_row else 0
 
-    # Album health
-    album_health, total_albums = _build_album_health(conn)
+    # Album health (including alias mismatch check)
+    canonical_keys = frozenset(tags_config.required + tags_config.recommended)
+    album_health, total_albums = _build_album_health(
+        conn, aliases=tags_config.aliases, canonical_keys=canonical_keys,
+    )
 
     # Track health
     track_health = _build_track_health(conn, total_files)
@@ -330,14 +391,21 @@ def full_data(
         if key:
             encoding_counts[key.upper()] = r["file_count"]
 
-    # Tag bars per config group
+    # Tag bars per config group + alias keys in recommended
     required_tags = _build_tag_bars(conn, tags_config.required, total_files, encoding_counts)
-    recommended_tags = _build_tag_bars(conn, tags_config.recommended, total_files, encoding_counts)
+
+    # Add alias keys to recommended tags (aliases whose canonical is in required or recommended)
+    alias_tag_keys = tuple(
+        alias_key for alias_key, canon_key in tags_config.aliases.items()
+        if canon_key in canonical_keys
+    )
+    recommended_plus_aliases = tags_config.recommended + alias_tag_keys
+    recommended_tags = _build_tag_bars(conn, recommended_plus_aliases, total_files, encoding_counts)
+
     other_tags = _build_tag_bars(conn, tags_config.other, total_files, encoding_counts)
 
     # Alias consistency
     from storeroon.reports.queries.tag_coverage import _alias_usage
-    canonical_keys = frozenset(tags_config.required + tags_config.recommended)
     alias_consistency = _alias_usage(conn, tags_config.aliases, canonical_keys)
 
     return CollectionIssuesFullData(
