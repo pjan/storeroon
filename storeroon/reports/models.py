@@ -445,19 +445,19 @@ class LyricsCoverageOverall:
 
     total_files: int
     # Embedded lyrics (from LYRICS / UNSYNCEDLYRICS tags)
-    embedded_timed_count: int
-    embedded_timed_pct: float
-    embedded_plain_count: int
-    embedded_plain_pct: float
-    embedded_none_count: int
-    embedded_none_pct: float
+    embedded_synced_count: int
+    embedded_synced_pct: float
+    embedded_unsynced_count: int
+    embedded_unsynced_pct: float
+    embedded_absent_count: int
+    embedded_absent_pct: float
     # Sidecar .lrc files
-    sidecar_timed_count: int
-    sidecar_timed_pct: float
-    sidecar_plain_count: int
-    sidecar_plain_pct: float
-    sidecar_none_count: int
-    sidecar_none_pct: float
+    sidecar_synced_count: int
+    sidecar_synced_pct: float
+    sidecar_unsynced_count: int
+    sidecar_unsynced_pct: float
+    sidecar_absent_count: int
+    sidecar_absent_pct: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -465,7 +465,7 @@ class LyricsCoverageByEntity:
     """Lyrics coverage for a single artist or album."""
 
     name: str
-    embedded_any: int  # tracks with timed or plain embedded lyrics
+    embedded_any: int  # tracks with synced or unsynced embedded lyrics
     sidecar_any: int  # tracks with a .lrc sidecar
     total: int
     embedded_pct: float

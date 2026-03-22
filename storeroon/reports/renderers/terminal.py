@@ -522,13 +522,13 @@ def render_lyrics(console: Console, data: LyricsFullData) -> None:
     emb_table.add_column("Count", justify="right")
     emb_table.add_column("%", justify="right")
     emb_table.add_row(
-        Text("Timed", style="green"), fmt_count(o.embedded_timed_count), fmt_pct(o.embedded_timed_pct),
+        Text("Synced", style="green"), fmt_count(o.embedded_synced_count), fmt_pct(o.embedded_synced_pct),
     )
     emb_table.add_row(
-        "Plain", fmt_count(o.embedded_plain_count), fmt_pct(o.embedded_plain_pct),
+        "Unsynced", fmt_count(o.embedded_unsynced_count), fmt_pct(o.embedded_unsynced_pct),
     )
     emb_table.add_row(
-        "None", fmt_count(o.embedded_none_count), fmt_pct(o.embedded_none_pct),
+        "Absent", fmt_count(o.embedded_absent_count), fmt_pct(o.embedded_absent_pct),
     )
     console.print(emb_table)
 
@@ -540,13 +540,13 @@ def render_lyrics(console: Console, data: LyricsFullData) -> None:
     sc_table.add_column("Count", justify="right")
     sc_table.add_column("%", justify="right")
     sc_table.add_row(
-        Text("Timed", style="green"), fmt_count(o.sidecar_timed_count), fmt_pct(o.sidecar_timed_pct),
+        Text("Synced", style="green"), fmt_count(o.sidecar_synced_count), fmt_pct(o.sidecar_synced_pct),
     )
     sc_table.add_row(
-        "Plain", fmt_count(o.sidecar_plain_count), fmt_pct(o.sidecar_plain_pct),
+        "Unsynced", fmt_count(o.sidecar_unsynced_count), fmt_pct(o.sidecar_unsynced_pct),
     )
     sc_table.add_row(
-        "None", fmt_count(o.sidecar_none_count), fmt_pct(o.sidecar_none_pct),
+        "Absent", fmt_count(o.sidecar_absent_count), fmt_pct(o.sidecar_absent_pct),
     )
     console.print(sc_table)
 

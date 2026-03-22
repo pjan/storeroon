@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
@@ -95,6 +96,10 @@ class _FlacData:
 
     tags: list[_TagRecord] = field(default_factory=list)
     issues: list[_IssueRecord] = field(default_factory=list)
+
+    # Lyrics analysis (populated by _analyse_lyrics)
+    embedded_lyrics: str = "absent"  # synced / unsynced / absent
+    sidecar_lyrics: str = "absent"  # synced / unsynced / absent
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +492,117 @@ def _read_flac(filepath: Path, tags_config: TagsConfig) -> _FlacData:
                 )
             )
 
+    # ── Lyrics analysis ──
+    _analyse_lyrics(data, filepath)
+
     return data
+
+
+# ---------------------------------------------------------------------------
+# Lyrics analysis helpers
+# ---------------------------------------------------------------------------
+
+# Matches LRC timestamps like [01:23.45] or [1:23:45] and captures MM:SS
+_RE_LRC_TS = re.compile(r"\[(\d{1,2}):(\d{2})(?:[.:]\d+)?\]")
+
+# Tolerance in seconds for overlong check (timestamps may slightly exceed duration)
+_OVERLONG_TOLERANCE_S = 5.0
+
+
+def _parse_lrc_timestamps(text: str) -> list[float]:
+    """Extract all LRC timestamps from *text* as seconds, in order of appearance."""
+    timestamps: list[float] = []
+    for m in _RE_LRC_TS.finditer(text):
+        minutes = int(m.group(1))
+        seconds = int(m.group(2))
+        timestamps.append(minutes * 60.0 + seconds)
+    return timestamps
+
+
+def _check_lyrics_validity(
+    timestamps: list[float],
+    duration_seconds: float | None,
+    prefix: str,  # "tag" or "lrc"
+) -> list[_IssueRecord]:
+    """Check a list of LRC timestamps for ordering and overlong issues."""
+    issues: list[_IssueRecord] = []
+
+    # Check monotonically non-decreasing
+    for i in range(1, len(timestamps)):
+        if timestamps[i] < timestamps[i - 1]:
+            issues.append(_IssueRecord(
+                issue_type=f"{prefix}_lyrics_unordered",
+                severity="error",
+                description=(
+                    f"Lyrics timestamps are not in order "
+                    f"(e.g. {timestamps[i-1]:.0f}s followed by {timestamps[i]:.0f}s)"
+                ),
+            ))
+            break  # one issue per file is enough
+
+    # Check overlong
+    if duration_seconds is not None and timestamps:
+        max_ts = max(timestamps)
+        if max_ts > duration_seconds + _OVERLONG_TOLERANCE_S:
+            issues.append(_IssueRecord(
+                issue_type=f"{prefix}_lyrics_overlong",
+                severity="error",
+                description=(
+                    f"Lyrics timestamp {max_ts:.0f}s exceeds track duration "
+                    f"{duration_seconds:.0f}s"
+                ),
+            ))
+
+    return issues
+
+
+def _analyse_lyrics(data: _FlacData, filepath: Path) -> None:
+    """Analyse embedded lyrics tags and sidecar .lrc for a FLAC file.
+
+    Sets ``data.embedded_lyrics`` and ``data.sidecar_lyrics`` to one of
+    ``'synced'``, ``'unsynced'``, or ``'absent'``.  Appends scan issues
+    for invalid timestamps.
+    """
+    # ── Embedded lyrics (LYRICS / UNSYNCEDLYRICS tags) ──
+    lyrics_values: list[str] = []
+    for tag in data.tags:
+        if tag.tag_key_upper in ("LYRICS", "UNSYNCEDLYRICS") and tag.tag_index == 0:
+            if tag.tag_value and tag.tag_value.strip():
+                lyrics_values.append(tag.tag_value)
+
+    if lyrics_values:
+        # Check all non-empty values; prefer synced classification
+        all_timestamps: list[float] = []
+        has_timestamps = False
+        for val in lyrics_values:
+            ts = _parse_lrc_timestamps(val)
+            if ts:
+                has_timestamps = True
+                all_timestamps = ts  # use the last one with timestamps for validation
+        if has_timestamps:
+            data.embedded_lyrics = "synced"
+            data.issues.extend(
+                _check_lyrics_validity(all_timestamps, data.duration_seconds, "tag")
+            )
+        else:
+            data.embedded_lyrics = "unsynced"
+
+    # ── Sidecar .lrc file ──
+    lrc_path = filepath.with_suffix(".lrc")
+    if lrc_path.is_file():
+        try:
+            content = lrc_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip():
+                ts = _parse_lrc_timestamps(content)
+                if ts:
+                    data.sidecar_lyrics = "synced"
+                    data.issues.extend(
+                        _check_lyrics_validity(ts, data.duration_seconds, "lrc")
+                    )
+                else:
+                    data.sidecar_lyrics = "unsynced"
+        except OSError:
+            pass  # can't read → treat as absent
 
 
 # ---------------------------------------------------------------------------
@@ -597,6 +712,13 @@ def _insert_file_record(
                 issue.description,
                 issue.details,
             ),
+        )
+
+    # Lyrics analysis
+    if status != "unreadable":
+        conn.execute(
+            "INSERT INTO lyrics_analysis (file_id, embedded, sidecar) VALUES (?, ?, ?)",
+            (file_id, data.embedded_lyrics, data.sidecar_lyrics),
         )
 
     return file_id

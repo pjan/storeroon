@@ -487,8 +487,8 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     o = data.overall
-    emb_any = o.embedded_timed_count + o.embedded_plain_count
-    sc_any = o.sidecar_timed_count + o.sidecar_plain_count
+    emb_any = o.embedded_synced_count + o.embedded_unsynced_count
+    sc_any = o.sidecar_synced_count + o.sidecar_unsynced_count
     emb_any_pct = safe_pct(emb_any, o.total_files)
     sc_any_pct = safe_pct(sc_any, o.total_files)
 
@@ -506,19 +506,19 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
     # Embedded lyrics breakdown
     emb_rows: list[list[dict[str, Any]]] = [
         [
-            _cell("Timed"),
-            _cell(fmt_count(o.embedded_timed_count), cls="num"),
-            _cell(fmt_pct(o.embedded_timed_pct), cls="num", bar_pct=o.embedded_timed_pct, bar_cls="bar-green"),
+            _cell("Synced"),
+            _cell(fmt_count(o.embedded_synced_count), cls="num"),
+            _cell(fmt_pct(o.embedded_synced_pct), cls="num", bar_pct=o.embedded_synced_pct, bar_cls="bar-green"),
         ],
         [
-            _cell("Plain"),
-            _cell(fmt_count(o.embedded_plain_count), cls="num"),
-            _cell(fmt_pct(o.embedded_plain_pct), cls="num", bar_pct=o.embedded_plain_pct, bar_cls="bar-green"),
+            _cell("Unsynced"),
+            _cell(fmt_count(o.embedded_unsynced_count), cls="num"),
+            _cell(fmt_pct(o.embedded_unsynced_pct), cls="num", bar_pct=o.embedded_unsynced_pct, bar_cls="bar-green"),
         ],
         [
-            _cell("None"),
-            _cell(fmt_count(o.embedded_none_count), cls="num"),
-            _cell(fmt_pct(o.embedded_none_pct), cls="num", bar_pct=o.embedded_none_pct, bar_cls="bar-red"),
+            _cell("Absent"),
+            _cell(fmt_count(o.embedded_absent_count), cls="num"),
+            _cell(fmt_pct(o.embedded_absent_pct), cls="num", bar_pct=o.embedded_absent_pct, bar_cls="bar-red"),
         ],
     ]
     sections.append(
@@ -531,19 +531,19 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
     # Sidecar .lrc breakdown
     sc_rows: list[list[dict[str, Any]]] = [
         [
-            _cell("Timed"),
-            _cell(fmt_count(o.sidecar_timed_count), cls="num"),
-            _cell(fmt_pct(o.sidecar_timed_pct), cls="num", bar_pct=o.sidecar_timed_pct, bar_cls="bar-green"),
+            _cell("Synced"),
+            _cell(fmt_count(o.sidecar_synced_count), cls="num"),
+            _cell(fmt_pct(o.sidecar_synced_pct), cls="num", bar_pct=o.sidecar_synced_pct, bar_cls="bar-green"),
         ],
         [
-            _cell("Plain"),
-            _cell(fmt_count(o.sidecar_plain_count), cls="num"),
-            _cell(fmt_pct(o.sidecar_plain_pct), cls="num", bar_pct=o.sidecar_plain_pct, bar_cls="bar-green"),
+            _cell("Unsynced"),
+            _cell(fmt_count(o.sidecar_unsynced_count), cls="num"),
+            _cell(fmt_pct(o.sidecar_unsynced_pct), cls="num", bar_pct=o.sidecar_unsynced_pct, bar_cls="bar-green"),
         ],
         [
-            _cell("None"),
-            _cell(fmt_count(o.sidecar_none_count), cls="num"),
-            _cell(fmt_pct(o.sidecar_none_pct), cls="num", bar_pct=o.sidecar_none_pct, bar_cls="bar-red"),
+            _cell("Absent"),
+            _cell(fmt_count(o.sidecar_absent_count), cls="num"),
+            _cell(fmt_pct(o.sidecar_absent_pct), cls="num", bar_pct=o.sidecar_absent_pct, bar_cls="bar-red"),
         ],
     ]
     sections.append(

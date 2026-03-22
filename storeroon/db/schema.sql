@@ -94,6 +94,18 @@ CREATE INDEX IF NOT EXISTS idx_scan_issues_unresolved ON scan_issues (resolved)
     WHERE resolved = 0;
 
 -- -----------------------------------------------------------------------
+-- lyrics_analysis — scan-time lyrics classification
+-- -----------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS lyrics_analysis (
+    file_id   INTEGER PRIMARY KEY REFERENCES files (id) ON DELETE CASCADE,
+    embedded  TEXT NOT NULL DEFAULT 'absent'
+                  CHECK (embedded IN ('synced', 'unsynced', 'absent')),
+    sidecar   TEXT NOT NULL DEFAULT 'absent'
+                  CHECK (sidecar IN ('synced', 'unsynced', 'absent'))
+);
+
+-- -----------------------------------------------------------------------
 -- v_common_tags — pivot view for ad-hoc analysis
 --
 -- Uses MAX() aggregation on multi-value tags: returns ONE arbitrarily
