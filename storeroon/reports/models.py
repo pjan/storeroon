@@ -225,6 +225,31 @@ class TechnicalSummaryData:
 
 
 # =========================================================================
+# Album consistency (used by album_consistency query helpers)
+# =========================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class FieldConsistencyViolation:
+    """A field that has inconsistent values across tracks in an album."""
+
+    album_dir: str
+    field_name: str
+    distinct_values: list[str]
+    track_counts_per_value: dict[str, int]
+    null_track_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrackNumberingViolation:
+    """A track numbering issue within an album."""
+
+    album_dir: str
+    check_type: str  # missing_track, missing_disc, duplicate_track, totaltracks_mismatch, exceeds_total
+    description: str
+
+
+# =========================================================================
 # Scan issues
 # =========================================================================
 

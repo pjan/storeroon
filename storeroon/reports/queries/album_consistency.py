@@ -1,19 +1,14 @@
 """
-storeroon.reports.queries.album_consistency — Report 6: Intra-album consistency.
+storeroon.reports.queries.album_consistency — Intra-album consistency helpers.
 
 Album boundaries are defined by the parent directory path of the FLAC file,
 NOT by ALBUMARTIST + ALBUM tag values. Two different releases (e.g. original
 and remaster) may share those values but are distinct directories.
 
-Checks:
-    1. Field consistency — for each checked field, flag albums where
-       COUNT(DISTINCT TRIM(LOWER(tag_value))) > 1.
-    2. Track numbering — TOTALTRACKS vs actual count, gaps, duplicates,
-       disc number gaps, track numbers exceeding TOTALTRACKS.
-
-Public API:
-    full_data(conn, artist_filter=None) -> AlbumConsistencyFullData
-    summary_data(conn) -> AlbumConsistencySummaryData
+Private helpers used by overview, issues, and collection_issues queries:
+    _check_field_consistency(conn, album_dir, field, total_tracks)
+    _check_track_numbering(conn, album_dir, total_tracks)
+    _CONSISTENCY_FIELDS
 """
 
 from __future__ import annotations
@@ -22,9 +17,6 @@ import sqlite3
 from collections import Counter, defaultdict
 
 from storeroon.reports.models import (
-    AlbumConsistencyFullData,
-    AlbumConsistencySummaryData,
-    ConsistencyViolationSummary,
     FieldConsistencyViolation,
     TrackNumberingViolation,
 )
@@ -62,36 +54,6 @@ _CANONICAL_TO_ALIASES: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 # SQL queries
 # ---------------------------------------------------------------------------
-
-# All album directories (parent directory of each file).
-_ALBUM_DIRS_SQL = """
-SELECT DISTINCT
-    SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) AS album_dir
-FROM files f
-WHERE f.status = 'ok'
-ORDER BY album_dir
-"""
-
-# Album directories filtered by ALBUMARTIST substring match.
-_ALBUM_DIRS_FILTERED_SQL = """
-SELECT DISTINCT
-    SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) AS album_dir
-FROM files f
-JOIN raw_tags rt ON rt.file_id = f.id
-WHERE f.status = 'ok'
-  AND rt.tag_key_upper = 'ALBUMARTIST'
-  AND LOWER(rt.tag_value) LIKE '%' || LOWER(?) || '%'
-ORDER BY album_dir
-"""
-
-# All file IDs in a given album directory.
-_FILES_IN_ALBUM_SQL = """
-SELECT f.id AS file_id, f.path, f.filename
-FROM files f
-WHERE f.status = 'ok'
-  AND SUBSTR(f.path, 1, LENGTH(f.path) - LENGTH(f.filename) - 1) = ?
-ORDER BY f.filename
-"""
 
 # All tag values for a given key across files in an album directory.
 # Returns (file_id, tag_value) pairs. Only tag_index=0 to avoid
@@ -243,7 +205,7 @@ def _check_field_consistency(
     # Check for inconsistency: more than one distinct normalised value,
     # OR a mix of NULL and non-NULL.
     has_value_inconsistency = len(value_counts) > 1
-    has_null_mix = null_count > 0 and len(file_ids_with_tag) > 0
+    has_null_mix = null_count > 0 and len(file_values) > 0
 
     if not has_value_inconsistency and not has_null_mix:
         return None
@@ -421,105 +383,3 @@ def _check_track_numbering(
             )
 
     return violations
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
-def full_data(
-    conn: sqlite3.Connection,
-    *,
-    artist_filter: str | None = None,
-) -> AlbumConsistencyFullData:
-    """Return the complete dataset for ``report album-consistency``.
-
-    Parameters
-    ----------
-    conn:
-        An open SQLite connection to the storeroon database.
-    artist_filter:
-        Optional case-insensitive ALBUMARTIST substring filter.
-    """
-    # Get all album directories.
-    if artist_filter:
-        album_dir_rows = conn.execute(
-            _ALBUM_DIRS_FILTERED_SQL, (artist_filter,)
-        ).fetchall()
-    else:
-        album_dir_rows = conn.execute(_ALBUM_DIRS_SQL).fetchall()
-
-    album_dirs = [r["album_dir"] for r in album_dir_rows]
-
-    field_violations: list[FieldConsistencyViolation] = []
-    numbering_violations: list[TrackNumberingViolation] = []
-    albums_with_any_violation: set[str] = set()
-
-    # Track violation types for summary.
-    violation_type_albums: dict[str, set[str]] = defaultdict(set)
-
-    for album_dir in album_dirs:
-        # Get total tracks in this album directory.
-        file_rows = conn.execute(_FILES_IN_ALBUM_SQL, (album_dir,)).fetchall()
-        total_tracks = len(file_rows)
-
-        if total_tracks == 0:
-            continue
-
-        # --- Field consistency checks ---
-        for field_name in _CONSISTENCY_FIELDS:
-            violation = _check_field_consistency(
-                conn, album_dir, field_name, total_tracks
-            )
-            if violation is not None:
-                field_violations.append(violation)
-                albums_with_any_violation.add(album_dir)
-                violation_type_albums[f"field:{field_name}"].add(album_dir)
-
-        # --- Track numbering checks ---
-        num_violations = _check_track_numbering(conn, album_dir, total_tracks)
-        if num_violations:
-            numbering_violations.extend(num_violations)
-            albums_with_any_violation.add(album_dir)
-            for v in num_violations:
-                violation_type_albums[v.check_type].add(album_dir)
-
-    # Sort field violations by album dir.
-    field_violations.sort(key=lambda v: (v.album_dir, v.field_name))
-    numbering_violations.sort(key=lambda v: (v.album_dir, v.check_type))
-
-    # Build summary by violation type.
-    summary_by_type = [
-        ConsistencyViolationSummary(
-            check_type=check_type,
-            album_count=len(albums),
-        )
-        for check_type, albums in sorted(
-            violation_type_albums.items(),
-            key=lambda x: len(x[1]),
-            reverse=True,
-        )
-    ]
-
-    return AlbumConsistencyFullData(
-        total_albums=len(album_dirs),
-        albums_with_violations=len(albums_with_any_violation),
-        field_violations=field_violations,
-        numbering_violations=numbering_violations,
-        summary_by_type=summary_by_type,
-    )
-
-
-def summary_data(conn: sqlite3.Connection) -> AlbumConsistencySummaryData:
-    """Return headline metrics only for the ``summary`` command.
-
-    Total albums checked, total albums with any violation, top 5 most
-    common violation types with counts.
-    """
-    data = full_data(conn)
-    return AlbumConsistencySummaryData(
-        total_albums=data.total_albums,
-        albums_with_violations=data.albums_with_violations,
-        top_violation_types=data.summary_by_type[:5],
-    )
