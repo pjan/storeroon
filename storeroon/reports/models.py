@@ -441,16 +441,23 @@ class GenresSummaryData:
 
 @dataclass(frozen=True, slots=True)
 class LyricsCoverageOverall:
-    """Overall lyrics coverage stats."""
+    """Overall lyrics coverage stats with embedded/sidecar breakdown."""
 
-    with_lyrics_count: int
-    with_lyrics_pct: float
-    empty_lyrics_count: int
-    empty_lyrics_pct: float
-    no_lyrics_count: int
-    no_lyrics_pct: float
-    lyrics_key_count: int  # files using LYRICS
-    unsyncedlyrics_key_count: int  # files using UNSYNCEDLYRICS
+    total_files: int
+    # Embedded lyrics (from LYRICS / UNSYNCEDLYRICS tags)
+    embedded_timed_count: int
+    embedded_timed_pct: float
+    embedded_plain_count: int
+    embedded_plain_pct: float
+    embedded_none_count: int
+    embedded_none_pct: float
+    # Sidecar .lrc files
+    sidecar_timed_count: int
+    sidecar_timed_pct: float
+    sidecar_plain_count: int
+    sidecar_plain_pct: float
+    sidecar_none_count: int
+    sidecar_none_pct: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,9 +465,11 @@ class LyricsCoverageByEntity:
     """Lyrics coverage for a single artist or album."""
 
     name: str
-    with_lyrics: int
+    embedded_any: int  # tracks with timed or plain embedded lyrics
+    sidecar_any: int  # tracks with a .lrc sidecar
     total: int
-    coverage_pct: float
+    embedded_pct: float
+    sidecar_pct: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,8 +486,9 @@ class LyricsFullData:
 class LyricsSummaryData:
     """Summary data for lyrics in the summary command."""
 
-    coverage_pct: float
-    artists_with_zero_coverage: int
+    embedded_any_pct: float  # % with any embedded lyrics
+    sidecar_any_pct: float  # % with any .lrc sidecar
+    artists_with_zero_lyrics: int  # artists with neither embedded nor sidecar
 
 
 # =========================================================================

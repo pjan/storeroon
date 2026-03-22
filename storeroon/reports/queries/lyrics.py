@@ -1,27 +1,30 @@
 """
-storeroon.reports.queries.lyrics — Report 12: Lyrics coverage.
+storeroon.reports.queries.lyrics — Lyrics coverage report.
 
-Query ``raw_tags`` for ``tag_key_upper = 'LYRICS'`` and separately check for
-``tag_key_upper = 'UNSYNCEDLYRICS'`` (an alternate key some taggers use).
-Treat either as "has embedded lyrics".
+Evaluates lyrics for each track across two dimensions:
 
-Full report tables:
-    1. Overall coverage: files with non-empty LYRICS or UNSYNCEDLYRICS /
-       files with the tag but empty value / files with no lyrics tag.
-    2. Coverage by artist: for each ALBUMARTIST, count of tracks with lyrics /
-       total tracks / %. Sorted by % ascending (worst coverage first).
-    3. Coverage by album: same, grouped by album directory path.
-    4. Key variant note: count of files using UNSYNCEDLYRICS vs LYRICS.
+1. **Embedded lyrics** (LYRICS / UNSYNCEDLYRICS Vorbis comment tags):
+   - ``timed`` — contains LRC-style timestamps ``[MM:SS``
+   - ``plain`` — non-empty text without timestamps
+   - ``none``  — no tag or empty tag
+
+2. **Sidecar .lrc file** (same name as the FLAC, with ``.lrc`` extension):
+   - ``timed`` — file exists and contains timestamps
+   - ``plain`` — file exists but no timestamps
+   - ``none``  — file does not exist
 
 Public API:
-    full_data(conn, artist_filter=None) -> LyricsFullData
-    summary_data(conn) -> LyricsSummaryData
+    full_data(conn, *, artist_filter=None, collection_root=None) -> LyricsFullData
+    summary_data(conn, *, collection_root=None) -> LyricsSummaryData
 """
 
 from __future__ import annotations
 
+import logging
+import re
 import sqlite3
 from collections import defaultdict
+from pathlib import Path
 
 from storeroon.reports.models import (
     LyricsCoverageByEntity,
@@ -35,11 +38,12 @@ from storeroon.reports.utils import (
     safe_pct,
 )
 
+log = logging.getLogger("storeroon.reports")
+
 # ---------------------------------------------------------------------------
 # SQL queries
 # ---------------------------------------------------------------------------
 
-# All ok file IDs.
 _ALL_OK_FILE_IDS_SQL = """
 SELECT id AS file_id FROM files WHERE status = 'ok'
 """
@@ -53,7 +57,6 @@ WHERE f.status = 'ok'
   AND LOWER(rt.tag_value) LIKE '%' || LOWER(?) || '%'
 """
 
-# Files that have a LYRICS tag (any value, including empty).
 _FILES_WITH_LYRICS_SQL = """
 SELECT DISTINCT rt.file_id, rt.tag_value
 FROM raw_tags rt
@@ -63,7 +66,6 @@ WHERE f.status = 'ok'
   AND rt.tag_index = 0
 """
 
-# Files that have an UNSYNCEDLYRICS tag (any value, including empty).
 _FILES_WITH_UNSYNCEDLYRICS_SQL = """
 SELECT DISTINCT rt.file_id, rt.tag_value
 FROM raw_tags rt
@@ -73,7 +75,6 @@ WHERE f.status = 'ok'
   AND rt.tag_index = 0
 """
 
-# ALBUMARTIST for each ok file (first value only).
 _FILE_ALBUMARTIST_SQL = """
 SELECT rt.file_id, rt.tag_value AS albumartist
 FROM raw_tags rt
@@ -83,7 +84,12 @@ WHERE f.status = 'ok'
   AND rt.tag_index = 0
 """
 
-# Album directory for each ok file.
+_FILE_PATHS_SQL = """
+SELECT f.id AS file_id, f.path
+FROM files f
+WHERE f.status = 'ok'
+"""
+
 _FILE_ALBUM_DIR_SQL = """
 SELECT
     f.id AS file_id,
@@ -91,6 +97,18 @@ SELECT
 FROM files f
 WHERE f.status = 'ok'
 """
+
+# ---------------------------------------------------------------------------
+# Timed lyrics detection
+# ---------------------------------------------------------------------------
+
+# Matches LRC-style timestamps like [01:23.45] or [1:23.
+_RE_LRC_TIMESTAMP = re.compile(r"\[\d{1,2}:\d{2}")
+
+
+def _is_timed_lyrics(text: str) -> bool:
+    """Return True if *text* contains at least one LRC timestamp pattern."""
+    return _RE_LRC_TIMESTAMP.search(text) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +119,6 @@ WHERE f.status = 'ok'
 def _get_total_ok_files(
     conn: sqlite3.Connection, artist_filter: str | None = None
 ) -> int:
-    """Return count of files with status='ok', optionally filtered."""
     if artist_filter:
         row = conn.execute(TOTAL_OK_FILES_FILTERED_SQL, (artist_filter,)).fetchone()
     else:
@@ -112,7 +129,6 @@ def _get_total_ok_files(
 def _get_all_ok_file_ids(
     conn: sqlite3.Connection, artist_filter: str | None = None
 ) -> set[int]:
-    """Return the set of all ok file IDs, optionally filtered by artist."""
     if artist_filter:
         rows = conn.execute(_ALL_OK_FILE_IDS_FILTERED_SQL, (artist_filter,)).fetchall()
     else:
@@ -124,22 +140,15 @@ def _build_lyrics_maps(
     conn: sqlite3.Connection,
     ok_file_ids: set[int],
 ) -> tuple[dict[int, str], dict[int, str]]:
-    """Build file_id -> tag_value maps for LYRICS and UNSYNCEDLYRICS.
-
-    Only includes files that are in the ok_file_ids set.
-
-    Returns (lyrics_map, unsyncedlyrics_map).
-    """
+    """Build file_id -> tag_value maps for LYRICS and UNSYNCEDLYRICS."""
     lyrics_map: dict[int, str] = {}
-    rows = conn.execute(_FILES_WITH_LYRICS_SQL).fetchall()
-    for r in rows:
+    for r in conn.execute(_FILES_WITH_LYRICS_SQL).fetchall():
         fid = r["file_id"]
         if fid in ok_file_ids:
             lyrics_map[fid] = r["tag_value"]
 
     unsynced_map: dict[int, str] = {}
-    rows = conn.execute(_FILES_WITH_UNSYNCEDLYRICS_SQL).fetchall()
-    for r in rows:
+    for r in conn.execute(_FILES_WITH_UNSYNCEDLYRICS_SQL).fetchall():
         fid = r["file_id"]
         if fid in ok_file_ids:
             unsynced_map[fid] = r["tag_value"]
@@ -147,148 +156,165 @@ def _build_lyrics_maps(
     return lyrics_map, unsynced_map
 
 
-def _classify_lyrics(
+def _classify_embedded(
     ok_file_ids: set[int],
     lyrics_map: dict[int, str],
     unsynced_map: dict[int, str],
-) -> tuple[set[int], set[int], set[int]]:
-    """Classify each file into one of three categories:
+) -> dict[int, str]:
+    """Classify each file's embedded lyrics as 'timed', 'plain', or 'none'.
 
-    1. Has non-empty lyrics (via LYRICS or UNSYNCEDLYRICS).
-    2. Has lyrics tag(s) but all are empty/whitespace.
-    3. No lyrics tag at all.
-
-    Returns (with_lyrics, empty_lyrics, no_lyrics) — each a set of file_ids.
+    If both LYRICS and UNSYNCEDLYRICS exist, prefer the timed one.
     """
-    with_lyrics: set[int] = set()
-    empty_lyrics: set[int] = set()
-    no_lyrics: set[int] = set()
+    result: dict[int, str] = {}
 
     for fid in ok_file_ids:
         lyrics_val = lyrics_map.get(fid)
         unsynced_val = unsynced_map.get(fid)
 
-        has_any_tag = lyrics_val is not None or unsynced_val is not None
+        # Collect non-empty values
+        candidates: list[str] = []
+        if lyrics_val is not None and lyrics_val.strip():
+            candidates.append(lyrics_val)
+        if unsynced_val is not None and unsynced_val.strip():
+            candidates.append(unsynced_val)
 
-        if not has_any_tag:
-            no_lyrics.add(fid)
+        if not candidates:
+            result[fid] = "none"
             continue
 
-        # Check if any of the tag values is non-empty.
-        has_nonempty = False
-        if lyrics_val is not None and lyrics_val.strip():
-            has_nonempty = True
-        if unsynced_val is not None and unsynced_val.strip():
-            has_nonempty = True
-
-        if has_nonempty:
-            with_lyrics.add(fid)
+        # Check if any candidate is timed
+        for c in candidates:
+            if _is_timed_lyrics(c):
+                result[fid] = "timed"
+                break
         else:
-            empty_lyrics.add(fid)
+            result[fid] = "plain"
 
-    return with_lyrics, empty_lyrics, no_lyrics
+    return result
+
+
+def _classify_sidecars(
+    ok_file_ids: set[int],
+    file_paths: dict[int, str],
+    collection_root: Path | None,
+) -> dict[int, str]:
+    """Classify each file's sidecar .lrc as 'timed', 'plain', or 'none'."""
+    result: dict[int, str] = {}
+
+    if collection_root is None:
+        for fid in ok_file_ids:
+            result[fid] = "none"
+        return result
+
+    for fid in ok_file_ids:
+        rel_path = file_paths.get(fid)
+        if not rel_path:
+            result[fid] = "none"
+            continue
+
+        # Replace .flac (case-insensitive) with .lrc
+        if rel_path.lower().endswith(".flac"):
+            lrc_rel = rel_path[:-5] + ".lrc"
+        else:
+            lrc_rel = rel_path + ".lrc"
+
+        lrc_path = collection_root / lrc_rel
+        if not lrc_path.is_file():
+            result[fid] = "none"
+            continue
+
+        try:
+            content = lrc_path.read_text(encoding="utf-8", errors="replace")
+            if content.strip() and _is_timed_lyrics(content):
+                result[fid] = "timed"
+            elif content.strip():
+                result[fid] = "plain"
+            else:
+                result[fid] = "none"
+        except OSError:
+            result[fid] = "none"
+
+    return result
+
+
+def _get_file_paths(
+    conn: sqlite3.Connection, ok_file_ids: set[int]
+) -> dict[int, str]:
+    """Return file_id → relative path map."""
+    result: dict[int, str] = {}
+    for r in conn.execute(_FILE_PATHS_SQL).fetchall():
+        fid = r["file_id"]
+        if fid in ok_file_ids:
+            result[fid] = r["path"]
+    return result
 
 
 def _build_overall(
     total_files: int,
-    with_lyrics: set[int],
-    empty_lyrics: set[int],
-    no_lyrics: set[int],
-    lyrics_map: dict[int, str],
-    unsynced_map: dict[int, str],
+    embedded: dict[int, str],
+    sidecars: dict[int, str],
 ) -> LyricsCoverageOverall:
-    """Build the overall coverage stats."""
-    # Count files using each key variant (non-empty only).
-    lyrics_key_count = sum(1 for fid, val in lyrics_map.items() if val.strip())
-    unsyncedlyrics_key_count = sum(
-        1 for fid, val in unsynced_map.items() if val.strip()
-    )
+    """Build overall coverage stats from classification dicts."""
+    emb_timed = sum(1 for v in embedded.values() if v == "timed")
+    emb_plain = sum(1 for v in embedded.values() if v == "plain")
+    emb_none = sum(1 for v in embedded.values() if v == "none")
+
+    sc_timed = sum(1 for v in sidecars.values() if v == "timed")
+    sc_plain = sum(1 for v in sidecars.values() if v == "plain")
+    sc_none = sum(1 for v in sidecars.values() if v == "none")
 
     return LyricsCoverageOverall(
-        with_lyrics_count=len(with_lyrics),
-        with_lyrics_pct=safe_pct(len(with_lyrics), total_files),
-        empty_lyrics_count=len(empty_lyrics),
-        empty_lyrics_pct=safe_pct(len(empty_lyrics), total_files),
-        no_lyrics_count=len(no_lyrics),
-        no_lyrics_pct=safe_pct(len(no_lyrics), total_files),
-        lyrics_key_count=lyrics_key_count,
-        unsyncedlyrics_key_count=unsyncedlyrics_key_count,
+        total_files=total_files,
+        embedded_timed_count=emb_timed,
+        embedded_timed_pct=safe_pct(emb_timed, total_files),
+        embedded_plain_count=emb_plain,
+        embedded_plain_pct=safe_pct(emb_plain, total_files),
+        embedded_none_count=emb_none,
+        embedded_none_pct=safe_pct(emb_none, total_files),
+        sidecar_timed_count=sc_timed,
+        sidecar_timed_pct=safe_pct(sc_timed, total_files),
+        sidecar_plain_count=sc_plain,
+        sidecar_plain_pct=safe_pct(sc_plain, total_files),
+        sidecar_none_count=sc_none,
+        sidecar_none_pct=safe_pct(sc_none, total_files),
     )
 
 
-def _build_by_artist(
+def _build_by_entity(
     conn: sqlite3.Connection,
     ok_file_ids: set[int],
-    with_lyrics: set[int],
+    embedded: dict[int, str],
+    sidecars: dict[int, str],
+    group_sql: str,
+    group_key: str,
 ) -> list[LyricsCoverageByEntity]:
-    """Build lyrics coverage grouped by ALBUMARTIST.
+    """Build lyrics coverage grouped by a key (artist or album_dir)."""
+    rows = conn.execute(group_sql).fetchall()
 
-    Returns a list sorted by coverage % ascending (worst coverage first).
-    """
-    rows = conn.execute(_FILE_ALBUMARTIST_SQL).fetchall()
-
-    # Group file IDs by artist.
-    artist_files: dict[str, set[int]] = defaultdict(set)
+    entity_files: dict[str, set[int]] = defaultdict(set)
     for r in rows:
         fid = r["file_id"]
         if fid in ok_file_ids:
-            artist = r["albumartist"] or "(unknown)"
-            artist_files[artist].add(fid)
+            entity_files[r[group_key] or "(unknown)"].add(fid)
 
     result: list[LyricsCoverageByEntity] = []
-    for artist, fids in artist_files.items():
+    for name, fids in entity_files.items():
         total = len(fids)
-        with_count = len(fids & with_lyrics)
-        coverage = safe_pct(with_count, total)
+        emb_any = sum(1 for fid in fids if embedded.get(fid, "none") != "none")
+        sc_any = sum(1 for fid in fids if sidecars.get(fid, "none") != "none")
         result.append(
             LyricsCoverageByEntity(
-                name=artist,
-                with_lyrics=with_count,
+                name=name,
+                embedded_any=emb_any,
+                sidecar_any=sc_any,
                 total=total,
-                coverage_pct=coverage,
+                embedded_pct=safe_pct(emb_any, total),
+                sidecar_pct=safe_pct(sc_any, total),
             )
         )
 
-    # Sort by coverage % ascending (worst first).
-    result.sort(key=lambda r: (r.coverage_pct, r.name))
-    return result
-
-
-def _build_by_album(
-    conn: sqlite3.Connection,
-    ok_file_ids: set[int],
-    with_lyrics: set[int],
-) -> list[LyricsCoverageByEntity]:
-    """Build lyrics coverage grouped by album directory path.
-
-    Returns a list sorted by coverage % ascending (worst coverage first).
-    """
-    rows = conn.execute(_FILE_ALBUM_DIR_SQL).fetchall()
-
-    # Group file IDs by album directory.
-    album_files: dict[str, set[int]] = defaultdict(set)
-    for r in rows:
-        fid = r["file_id"]
-        if fid in ok_file_ids:
-            album_dir = r["album_dir"] or "(root)"
-            album_files[album_dir].add(fid)
-
-    result: list[LyricsCoverageByEntity] = []
-    for album_dir, fids in album_files.items():
-        total = len(fids)
-        with_count = len(fids & with_lyrics)
-        coverage = safe_pct(with_count, total)
-        result.append(
-            LyricsCoverageByEntity(
-                name=album_dir,
-                with_lyrics=with_count,
-                total=total,
-                coverage_pct=coverage,
-            )
-        )
-
-    # Sort by coverage % ascending (worst first).
-    result.sort(key=lambda r: (r.coverage_pct, r.name))
+    # Sort by embedded coverage ascending (worst first)
+    result.sort(key=lambda r: (r.embedded_pct, r.name))
     return result
 
 
@@ -301,29 +327,25 @@ def full_data(
     conn: sqlite3.Connection,
     *,
     artist_filter: str | None = None,
+    collection_root: Path | None = None,
 ) -> LyricsFullData:
-    """Return the complete dataset for ``report lyrics``.
-
-    Parameters
-    ----------
-    conn:
-        An open SQLite connection to the storeroon database.
-    artist_filter:
-        Optional case-insensitive ALBUMARTIST substring filter.
-    """
+    """Return the complete dataset for ``report lyrics``."""
     total_files = _get_total_ok_files(conn, artist_filter)
     ok_file_ids = _get_all_ok_file_ids(conn, artist_filter)
 
     lyrics_map, unsynced_map = _build_lyrics_maps(conn, ok_file_ids)
-    with_lyrics, empty_lyrics, no_lyrics = _classify_lyrics(
-        ok_file_ids, lyrics_map, unsynced_map
-    )
+    embedded = _classify_embedded(ok_file_ids, lyrics_map, unsynced_map)
 
-    overall = _build_overall(
-        total_files, with_lyrics, empty_lyrics, no_lyrics, lyrics_map, unsynced_map
+    file_paths = _get_file_paths(conn, ok_file_ids)
+    sidecars = _classify_sidecars(ok_file_ids, file_paths, collection_root)
+
+    overall = _build_overall(total_files, embedded, sidecars)
+    by_artist = _build_by_entity(
+        conn, ok_file_ids, embedded, sidecars, _FILE_ALBUMARTIST_SQL, "albumartist"
     )
-    by_artist = _build_by_artist(conn, ok_file_ids, with_lyrics)
-    by_album = _build_by_album(conn, ok_file_ids, with_lyrics)
+    by_album = _build_by_entity(
+        conn, ok_file_ids, embedded, sidecars, _FILE_ALBUM_DIR_SQL, "album_dir"
+    )
 
     return LyricsFullData(
         total_files=total_files,
@@ -333,37 +355,43 @@ def full_data(
     )
 
 
-def summary_data(conn: sqlite3.Connection) -> LyricsSummaryData:
-    """Return headline metrics only for the ``summary`` command.
-
-    Overall coverage %, count of artists with zero lyrics coverage.
-    """
+def summary_data(
+    conn: sqlite3.Connection,
+    *,
+    collection_root: Path | None = None,
+) -> LyricsSummaryData:
+    """Return headline metrics only for the ``summary`` command."""
     total_files = _get_total_ok_files(conn)
     ok_file_ids = _get_all_ok_file_ids(conn)
 
     lyrics_map, unsynced_map = _build_lyrics_maps(conn, ok_file_ids)
-    with_lyrics, empty_lyrics, no_lyrics = _classify_lyrics(
-        ok_file_ids, lyrics_map, unsynced_map
-    )
+    embedded = _classify_embedded(ok_file_ids, lyrics_map, unsynced_map)
 
-    coverage_pct = safe_pct(len(with_lyrics), total_files)
+    file_paths = _get_file_paths(conn, ok_file_ids)
+    sidecars = _classify_sidecars(ok_file_ids, file_paths, collection_root)
 
-    # Count artists with zero coverage.
+    emb_any = sum(1 for v in embedded.values() if v != "none")
+    sc_any = sum(1 for v in sidecars.values() if v != "none")
+
+    # Count artists with zero coverage (neither embedded nor sidecar).
     rows = conn.execute(_FILE_ALBUMARTIST_SQL).fetchall()
     artist_files: dict[str, set[int]] = defaultdict(set)
     for r in rows:
         fid = r["file_id"]
         if fid in ok_file_ids:
-            artist = r["albumartist"] or "(unknown)"
-            artist_files[artist].add(fid)
+            artist_files[r["albumartist"] or "(unknown)"].add(fid)
 
     artists_zero = 0
     for artist, fids in artist_files.items():
-        with_count = len(fids & with_lyrics)
-        if with_count == 0:
+        has_any = any(
+            embedded.get(fid, "none") != "none" or sidecars.get(fid, "none") != "none"
+            for fid in fids
+        )
+        if not has_any:
             artists_zero += 1
 
     return LyricsSummaryData(
-        coverage_pct=coverage_pct,
-        artists_with_zero_coverage=artists_zero,
+        embedded_any_pct=safe_pct(emb_any, total_files),
+        sidecar_any_pct=safe_pct(sc_any, total_files),
+        artists_with_zero_lyrics=artists_zero,
     )

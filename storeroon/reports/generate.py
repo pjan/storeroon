@@ -187,7 +187,7 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         log.warning("Genres summary failed: %s", exc)
 
     try:
-        summary.lyrics = lyrics.summary_data(conn)
+        summary.lyrics = lyrics.summary_data(conn, collection_root=conf.collection.root)
     except Exception as exc:
         log.warning("Lyrics summary failed: %s", exc)
 
@@ -435,7 +435,7 @@ def _cmd_lyrics(args: argparse.Namespace) -> int:
     from storeroon.reports.queries import lyrics
     from storeroon.reports.renderers.terminal import render_lyrics
 
-    data = lyrics.full_data(conn, artist_filter=artist_filter)
+    data = lyrics.full_data(conn, artist_filter=artist_filter, collection_root=conf.collection.root)
     fmt = _get_output_format(args)
 
     if fmt == "terminal":
@@ -534,7 +534,7 @@ def generate_all_reports(conf: cfg.Config, report_dir: Path) -> tuple[int, list[
             lambda: artists.full_data(conn, fuzzy_threshold=threshold),
         ),
         ("Genres", "genres", lambda: genres.full_data(conn, fuzzy_threshold=threshold)),
-        ("Lyrics", "lyrics", lambda: lyrics.full_data(conn)),
+        ("Lyrics", "lyrics", lambda: lyrics.full_data(conn, collection_root=conf.collection.root)),
         ("ReplayGain", "replaygain", lambda: replaygain.full_data(conn)),
     ]
 

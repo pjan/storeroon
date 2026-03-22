@@ -487,89 +487,88 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
 
     o = data.overall
+    emb_any = o.embedded_timed_count + o.embedded_plain_count
+    sc_any = o.sidecar_timed_count + o.sidecar_plain_count
+    emb_any_pct = safe_pct(emb_any, o.total_files)
+    sc_any_pct = safe_pct(sc_any, o.total_files)
+
     sections.append(
         _section(
             "Lyrics Coverage",
             summary_cards=[
-                _card(fmt_count(data.total_files), "Total Files"),
-                _card(
-                    f"{fmt_count(o.with_lyrics_count)} ({fmt_pct(o.with_lyrics_pct)})",
-                    "With Lyrics",
-                ),
-                _card(
-                    f"{fmt_count(o.no_lyrics_count)} ({fmt_pct(o.no_lyrics_pct)})",
-                    "No Lyrics",
-                ),
+                _card(fmt_count(o.total_files), "Total Files"),
+                _card(f"{fmt_count(emb_any)} ({fmt_pct(emb_any_pct)})", "Embedded Lyrics"),
+                _card(f"{fmt_count(sc_any)} ({fmt_pct(sc_any_pct)})", "Sidecar .lrc"),
             ],
         )
     )
 
-    ov_rows: list[list[dict[str, Any]]] = [
+    # Embedded lyrics breakdown
+    emb_rows: list[list[dict[str, Any]]] = [
         [
-            _cell("With lyrics"),
-            _cell(fmt_count(o.with_lyrics_count), cls="num"),
-            _cell(
-                fmt_pct(o.with_lyrics_pct),
-                cls="num",
-                bar_pct=o.with_lyrics_pct,
-                bar_cls="bar-green",
-            ),
+            _cell("Timed"),
+            _cell(fmt_count(o.embedded_timed_count), cls="num"),
+            _cell(fmt_pct(o.embedded_timed_pct), cls="num", bar_pct=o.embedded_timed_pct, bar_cls="bar-green"),
         ],
         [
-            _cell("Empty lyrics tag"),
-            _cell(fmt_count(o.empty_lyrics_count), cls="num"),
-            _cell(
-                fmt_pct(o.empty_lyrics_pct),
-                cls="num",
-                bar_pct=o.empty_lyrics_pct,
-                bar_cls="bar-yellow",
-            ),
+            _cell("Plain"),
+            _cell(fmt_count(o.embedded_plain_count), cls="num"),
+            _cell(fmt_pct(o.embedded_plain_pct), cls="num", bar_pct=o.embedded_plain_pct, bar_cls="bar-green"),
         ],
         [
-            _cell("No lyrics tag"),
-            _cell(fmt_count(o.no_lyrics_count), cls="num"),
-            _cell(
-                fmt_pct(o.no_lyrics_pct),
-                cls="num",
-                bar_pct=o.no_lyrics_pct,
-                bar_cls="bar-red",
-            ),
+            _cell("None"),
+            _cell(fmt_count(o.embedded_none_count), cls="num"),
+            _cell(fmt_pct(o.embedded_none_pct), cls="num", bar_pct=o.embedded_none_pct, bar_cls="bar-red"),
         ],
     ]
     sections.append(
         _section(
-            "Overall Coverage",
-            tables=[
-                _table(
-                    None,
-                    [_hdr("Category"), _hdr("Count", "num"), _hdr("%", "num")],
-                    ov_rows,
-                )
-            ],
-            text_blocks=[
-                _text(
-                    f"Files using <code>LYRICS</code> key: {fmt_count(o.lyrics_key_count)} | "
-                    f"Files using <code>UNSYNCEDLYRICS</code> key: {fmt_count(o.unsyncedlyrics_key_count)}",
-                    cls="dim",
-                )
-            ],
+            "Embedded Lyrics (LYRICS / UNSYNCEDLYRICS tags)",
+            tables=[_table(None, [_hdr("Category"), _hdr("Count", "num"), _hdr("%", "num")], emb_rows)],
         )
     )
 
+    # Sidecar .lrc breakdown
+    sc_rows: list[list[dict[str, Any]]] = [
+        [
+            _cell("Timed"),
+            _cell(fmt_count(o.sidecar_timed_count), cls="num"),
+            _cell(fmt_pct(o.sidecar_timed_pct), cls="num", bar_pct=o.sidecar_timed_pct, bar_cls="bar-green"),
+        ],
+        [
+            _cell("Plain"),
+            _cell(fmt_count(o.sidecar_plain_count), cls="num"),
+            _cell(fmt_pct(o.sidecar_plain_pct), cls="num", bar_pct=o.sidecar_plain_pct, bar_cls="bar-green"),
+        ],
+        [
+            _cell("None"),
+            _cell(fmt_count(o.sidecar_none_count), cls="num"),
+            _cell(fmt_pct(o.sidecar_none_pct), cls="num", bar_pct=o.sidecar_none_pct, bar_cls="bar-red"),
+        ],
+    ]
+    sections.append(
+        _section(
+            "Sidecar .lrc Files",
+            tables=[_table(None, [_hdr("Category"), _hdr("Count", "num"), _hdr("%", "num")], sc_rows)],
+        )
+    )
+
+    # By artist
     if data.by_artist:
         ba_rows: list[list[dict[str, Any]]] = []
         for a in data.by_artist:
-            cov_cls = "severity-error" if a.coverage_pct == 0 else ""
+            emb_cls = "severity-error" if a.embedded_pct == 0 else ""
             ba_rows.append(
                 [
                     _cell(a.name),
-                    _cell(fmt_count(a.with_lyrics), cls="num"),
+                    _cell(fmt_count(a.embedded_any), cls="num"),
+                    _cell(fmt_count(a.sidecar_any), cls="num"),
                     _cell(fmt_count(a.total), cls="num"),
                     _cell(
-                        fmt_pct(a.coverage_pct),
-                        cls=f"num {cov_cls}".strip(),
-                        bar_pct=a.coverage_pct,
-                        bar_cls="bar-green" if a.coverage_pct > 0 else "bar-red",
+                        fmt_pct(a.embedded_pct),
+                        cls=f"num {emb_cls}".strip(),
+                        bar_pct=a.embedded_pct,
+                        bar_cls="bar-green" if a.embedded_pct > 0 else "bar-red",
                     ),
                 ]
             )
@@ -579,32 +578,29 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
                 tables=[
                     _table(
                         None,
-                        [
-                            _hdr("Artist"),
-                            _hdr("With Lyrics", "num"),
-                            _hdr("Total", "num"),
-                            _hdr("Coverage %", "num"),
-                        ],
+                        [_hdr("Artist"), _hdr("Embedded", "num"), _hdr("Sidecar", "num"), _hdr("Total", "num"), _hdr("Embedded %", "num")],
                         ba_rows,
                     )
                 ],
             )
         )
 
+    # By album
     if data.by_album:
         alb_rows: list[list[dict[str, Any]]] = []
         for a in data.by_album:
-            cov_cls = "severity-error" if a.coverage_pct == 0 else ""
+            emb_cls = "severity-error" if a.embedded_pct == 0 else ""
             alb_rows.append(
                 [
                     _cell(a.name, cls="path"),
-                    _cell(fmt_count(a.with_lyrics), cls="num"),
+                    _cell(fmt_count(a.embedded_any), cls="num"),
+                    _cell(fmt_count(a.sidecar_any), cls="num"),
                     _cell(fmt_count(a.total), cls="num"),
                     _cell(
-                        fmt_pct(a.coverage_pct),
-                        cls=f"num {cov_cls}".strip(),
-                        bar_pct=a.coverage_pct,
-                        bar_cls="bar-green" if a.coverage_pct > 0 else "bar-red",
+                        fmt_pct(a.embedded_pct),
+                        cls=f"num {emb_cls}".strip(),
+                        bar_pct=a.embedded_pct,
+                        bar_cls="bar-green" if a.embedded_pct > 0 else "bar-red",
                     ),
                 ]
             )
@@ -614,12 +610,7 @@ def build_lyrics_sections(data: LyricsFullData) -> list[dict[str, Any]]:
                 tables=[
                     _table(
                         None,
-                        [
-                            _hdr("Album Directory"),
-                            _hdr("With Lyrics", "num"),
-                            _hdr("Total", "num"),
-                            _hdr("Coverage %", "num"),
-                        ],
+                        [_hdr("Album Directory"), _hdr("Embedded", "num"), _hdr("Sidecar", "num"), _hdr("Total", "num"), _hdr("Embedded %", "num")],
                         alb_rows,
                     )
                 ],

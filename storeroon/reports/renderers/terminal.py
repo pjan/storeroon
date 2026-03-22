@@ -512,85 +512,91 @@ def render_lyrics(console: Console, data: LyricsFullData) -> None:
     _section_heading(console, "Lyrics Coverage")
     console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
 
-    # Table 1: Overall coverage.
     o = data.overall
-    ov_table = Table(
-        title="Overall Lyrics Coverage", show_header=True, header_style="bold"
-    )
-    ov_table.add_column("Category")
-    ov_table.add_column("Count", justify="right")
-    ov_table.add_column("%", justify="right")
-    ov_table.add_row(
-        Text("With lyrics", style="green"),
-        fmt_count(o.with_lyrics_count),
-        fmt_pct(o.with_lyrics_pct),
-    )
-    ov_table.add_row(
-        "Empty lyrics tag",
-        fmt_count(o.empty_lyrics_count),
-        fmt_pct(o.empty_lyrics_pct),
-    )
-    ov_table.add_row(
-        "No lyrics tag",
-        fmt_count(o.no_lyrics_count),
-        fmt_pct(o.no_lyrics_pct),
-    )
-    console.print(ov_table)
 
-    # Key variant note.
-    console.print(
-        f"\n  Files using [cyan]LYRICS[/cyan] key: {fmt_count(o.lyrics_key_count)}"
+    # Table 1: Embedded lyrics breakdown.
+    emb_table = Table(
+        title="Embedded Lyrics (LYRICS / UNSYNCEDLYRICS)", show_header=True, header_style="bold"
     )
-    console.print(
-        f"  Files using [cyan]UNSYNCEDLYRICS[/cyan] key: "
-        f"{fmt_count(o.unsyncedlyrics_key_count)}"
+    emb_table.add_column("Category")
+    emb_table.add_column("Count", justify="right")
+    emb_table.add_column("%", justify="right")
+    emb_table.add_row(
+        Text("Timed", style="green"), fmt_count(o.embedded_timed_count), fmt_pct(o.embedded_timed_pct),
     )
+    emb_table.add_row(
+        "Plain", fmt_count(o.embedded_plain_count), fmt_pct(o.embedded_plain_pct),
+    )
+    emb_table.add_row(
+        "None", fmt_count(o.embedded_none_count), fmt_pct(o.embedded_none_pct),
+    )
+    console.print(emb_table)
 
-    # Table 2: Coverage by artist (worst 20).
+    # Table 2: Sidecar .lrc breakdown.
+    sc_table = Table(
+        title="Sidecar .lrc Files", show_header=True, header_style="bold"
+    )
+    sc_table.add_column("Category")
+    sc_table.add_column("Count", justify="right")
+    sc_table.add_column("%", justify="right")
+    sc_table.add_row(
+        Text("Timed", style="green"), fmt_count(o.sidecar_timed_count), fmt_pct(o.sidecar_timed_pct),
+    )
+    sc_table.add_row(
+        "Plain", fmt_count(o.sidecar_plain_count), fmt_pct(o.sidecar_plain_pct),
+    )
+    sc_table.add_row(
+        "None", fmt_count(o.sidecar_none_count), fmt_pct(o.sidecar_none_pct),
+    )
+    console.print(sc_table)
+
+    # Table 3: Coverage by artist (worst 20).
     if data.by_artist:
         _subsection_heading(console, "Coverage by Artist (worst 20)")
         ba_table = Table(show_header=True, header_style="bold")
         ba_table.add_column("Artist")
-        ba_table.add_column("With Lyrics", justify="right")
+        ba_table.add_column("Embedded", justify="right")
+        ba_table.add_column("Sidecar", justify="right")
         ba_table.add_column("Total", justify="right")
-        ba_table.add_column("%", justify="right")
+        ba_table.add_column("Embedded %", justify="right")
 
         for a in data.by_artist[:20]:
-            style = "red" if a.coverage_pct == 0 else ""
+            style = "red" if a.embedded_pct == 0 else ""
             ba_table.add_row(
                 a.name,
-                fmt_count(a.with_lyrics),
+                fmt_count(a.embedded_any),
+                fmt_count(a.sidecar_any),
                 fmt_count(a.total),
-                Text(fmt_pct(a.coverage_pct), style=style),
+                Text(fmt_pct(a.embedded_pct), style=style),
             )
         if len(data.by_artist) > 20:
             console.print(
-                f"[dim]  … and {len(data.by_artist) - 20} more artists "
-                f"(use --output csv for full list)[/dim]"
+                f"[dim]  … and {len(data.by_artist) - 20} more artists[/dim]"
             )
         console.print(ba_table)
 
-    # Table 3: Coverage by album (worst 30).
+    # Table 4: Coverage by album (worst 30).
     if data.by_album:
         _subsection_heading(console, "Coverage by Album (worst 30)")
         alb_table = Table(show_header=True, header_style="bold")
         alb_table.add_column("Album Directory", style="dim", max_width=60)
-        alb_table.add_column("With Lyrics", justify="right")
+        alb_table.add_column("Embedded", justify="right")
+        alb_table.add_column("Sidecar", justify="right")
         alb_table.add_column("Total", justify="right")
-        alb_table.add_column("%", justify="right")
+        alb_table.add_column("Embedded %", justify="right")
 
         for a in data.by_album[:30]:
-            style = "red" if a.coverage_pct == 0 else ""
+            style = "red" if a.embedded_pct == 0 else ""
             alb_table.add_row(
                 a.name,
-                fmt_count(a.with_lyrics),
+                fmt_count(a.embedded_any),
+                fmt_count(a.sidecar_any),
                 fmt_count(a.total),
-                Text(fmt_pct(a.coverage_pct), style=style),
+                Text(fmt_pct(a.embedded_pct), style=style),
             )
         if len(data.by_album) > 30:
             console.print(
-                f"[dim]  … and {len(data.by_album) - 30} more albums "
-                f"(use --output csv for full list)[/dim]"
+                f"[dim]  … and {len(data.by_album) - 30} more albums[/dim]"
             )
         console.print(alb_table)
 
@@ -599,8 +605,9 @@ def render_lyrics_summary(console: Console, data: LyricsSummaryData) -> None:
     """Render lyrics summary in summary mode."""
     _subsection_heading(console, "📝 Lyrics")
     console.print(
-        f"  Coverage: [bold]{fmt_pct(data.coverage_pct)}[/bold], "
-        f"artists with zero: {data.artists_with_zero_coverage}"
+        f"  Embedded: [bold]{fmt_pct(data.embedded_any_pct)}[/bold], "
+        f"Sidecar: [bold]{fmt_pct(data.sidecar_any_pct)}[/bold], "
+        f"artists with zero: {data.artists_with_zero_lyrics}"
     )
 
 
