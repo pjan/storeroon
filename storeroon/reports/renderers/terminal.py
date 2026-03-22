@@ -28,8 +28,6 @@ from storeroon.reports.models import (
     OverviewSummaryData,
     ReplayGainFullData,
     ReplayGainSummaryData,
-    TagCoverageFullData,
-    TagCoverageSummaryData,
     TechnicalFullData,
     TechnicalSummaryData,
 )
@@ -344,156 +342,6 @@ def render_technical_summary(console: Console, data: TechnicalSummaryData) -> No
         )
     for f in flags:
         console.print(f"  {f}")
-
-
-# =========================================================================
-# Report 3 — Tag coverage and key inventory
-# =========================================================================
-
-
-def render_tag_coverage(console: Console, data: TagCoverageFullData) -> None:
-    """Render the full tag coverage report."""
-    if data.total_files == 0:
-        _empty_db_message(console)
-        return
-
-    _section_heading(console, "Tag Coverage & Key Inventory")
-    console.print(f"Total files: [bold]{fmt_count(data.total_files)}[/bold]")
-
-    # Coverage tables — one per group.
-    for group_name, group_data, severity in [
-        ("Required Tags", data.required_coverage, "required"),
-        ("Recommended Tags", data.recommended_coverage, "recommended"),
-        ("Other Tracked Tags", data.other_coverage, ""),
-    ]:
-        _subsection_heading(console, group_name)
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Tag Key", style="cyan")
-        table.add_column("", min_width=20)
-        table.add_column("Coverage", justify="right")
-        table.add_column("Present", justify="right")
-
-        for row in group_data:
-            bar_color = "green"
-            if severity == "required" and row.missing_count > 0:
-                bar_color = "red"
-            elif severity == "recommended" and row.missing_pct > 20.0:
-                bar_color = "yellow"
-
-            chart = bar_chart(row.present_pct, 100.0, width=20)
-            table.add_row(
-                row.tag_key,
-                f"[{bar_color}]{chart}[/{bar_color}]",
-                fmt_pct(row.present_pct),
-                fmt_count(row.present_count),
-            )
-        console.print(table)
-
-    # Alias consistency.
-    if data.alias_usage:
-        _subsection_heading(console, "Alias Consistency")
-        alias_table = Table(show_header=True, header_style="bold")
-        alias_table.add_column("Canonical Key", style="cyan")
-        alias_table.add_column("Alias Key")
-        alias_table.add_column("", min_width=20)
-        alias_table.add_column("Consistency", justify="right")
-
-        for row in data.alias_usage:
-            bar_color = "green" if row.consistency_pct >= 100.0 else "red"
-            chart = bar_chart(row.consistency_pct, 100.0, width=20)
-            alias_table.add_row(
-                row.canonical_key,
-                row.alias_key,
-                f"[{bar_color}]{chart}[/{bar_color}]",
-                fmt_pct(row.consistency_pct),
-            )
-        console.print(alias_table)
-
-    # Tags to strip (unknown keys).
-    if data.unknown_keys:
-        _subsection_heading(
-            console,
-            f"Tags to Strip ({len(data.unknown_keys)})",
-        )
-        unk_table = Table(show_header=True, header_style="bold")
-        unk_table.add_column("Tag Key", style="red")
-        unk_table.add_column("", min_width=20)
-        unk_table.add_column("Coverage", justify="right")
-        unk_table.add_column("Present", justify="right")
-
-        for row in data.unknown_keys:
-            chart = bar_chart(row.coverage_pct, 100.0, width=20)
-            unk_table.add_row(
-                row.tag_key_upper,
-                f"[red]{chart}[/red]",
-                fmt_pct(row.coverage_pct),
-                fmt_count(row.file_count),
-            )
-        console.print(unk_table)
-
-    # Full tag key inventory.
-    _subsection_heading(
-        console,
-        f"Full Tag Key Inventory ({len(data.full_inventory)} tags)",
-    )
-    inv_table = Table(show_header=True, header_style="bold")
-    inv_table.add_column("Classification")
-    inv_table.add_column("Tag Key", style="cyan")
-    inv_table.add_column("", min_width=20)
-    inv_table.add_column("Coverage", justify="right")
-    inv_table.add_column("Present", justify="right")
-
-    for row in data.full_inventory:
-        class_style = {
-            "required": "bold green",
-            "recommended": "green",
-            "other": "dim",
-            "alias": "yellow",
-            "standard_optional": "dim",
-            "strip": "red",
-            "unknown": "bold red",
-        }.get(row.classification, "")
-
-        chart = bar_chart(row.coverage_pct, 100.0, width=20)
-        inv_table.add_row(
-            Text(row.classification, style=class_style),
-            row.tag_key_upper,
-            f"[green]{chart}[/green]",
-            fmt_pct(row.coverage_pct),
-            fmt_count(row.file_count),
-        )
-    console.print(inv_table)
-
-
-def render_tag_coverage_summary(console: Console, data: TagCoverageSummaryData) -> None:
-    """Render tag coverage summary in summary mode."""
-    if data.total_files == 0:
-        return
-
-    _subsection_heading(console, "🏷  Tag Coverage")
-
-    if data.required_with_missing:
-        console.print("[red]  Required tags with missing coverage:[/red]")
-        for row in data.required_with_missing:
-            console.print(
-                f"    [red]• {row.tag_key}[/red]: "
-                f"{fmt_count(row.missing_count)} missing ({fmt_pct(row.missing_pct)})"
-            )
-
-    if data.recommended_high_missing:
-        console.print("[yellow]  Recommended tags with >20% missing:[/yellow]")
-        for row in data.recommended_high_missing:
-            console.print(
-                f"    [yellow]• {row.tag_key}[/yellow]: "
-                f"{fmt_pct(row.missing_pct)} missing"
-            )
-
-    console.print(f"  Unknown tag keys: [bold]{data.unknown_key_count}[/bold]")
-    if data.top_unknown_keys:
-        for row in data.top_unknown_keys:
-            console.print(
-                f"    • {row.tag_key_upper} ({fmt_count(row.file_count)} files)"
-            )
 
 
 # =========================================================================
@@ -1063,8 +911,6 @@ def render_master_summary(console: Console, summary: MasterSummary) -> None:
         render_overview_summary(console, summary.overview)
     if summary.technical:
         render_technical_summary(console, summary.technical)
-    if summary.tags:
-        render_tag_coverage_summary(console, summary.tags)
     if summary.album_consistency:
     if summary.duplicates:
     if summary.artists:

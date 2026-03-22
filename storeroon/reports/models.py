@@ -887,7 +887,6 @@ class MasterSummary:
 
     overview: OverviewSummaryData | None = None
     technical: TechnicalSummaryData | None = None
-    tags: TagCoverageSummaryData | None = None
     artists: ArtistsSummaryData | None = None
     genres: GenresSummaryData | None = None
     lyrics: LyricsSummaryData | None = None

@@ -26,8 +26,6 @@ from storeroon.reports.models import (
     OverviewFullData,
     ReplayGainFullData,
     TagBar,
-    TagCoverageFullData,
-    TagCoverageRow,
     TechnicalFullData,
 )
 from storeroon.reports.utils import (
@@ -47,7 +45,6 @@ REPORT_TITLES: dict[str, str] = {
     "overview": "Collection Overview",
     "collection_issues": "Collection Issues Overview",
     "technical": "Audio Technical Quality",
-    "tags": "Tag Coverage & Key Inventory",
     "key_inventory": "Key Inventory",
     "artists": "Artist Name Consistency",
     "genres": "Genre Analysis",
@@ -451,159 +448,6 @@ def build_technical_sections(data: TechnicalFullData) -> list[dict[str, Any]]:
 
     return sections
 
-
-# =========================================================================
-# Report 3 — Tag coverage and key inventory
-# =========================================================================
-
-
-def _coverage_table_rows(
-    group_data: list[TagCoverageRow],
-    severity_threshold: str = "",
-) -> list[list[dict[str, Any]]]:
-    """Build table rows for a tag coverage group.
-
-    Columns: Tag Key | Coverage (bar + %) | Present
-    """
-    rows: list[list[dict[str, Any]]] = []
-    for row in group_data:
-        bar_cls = "bar-green"
-        if severity_threshold == "required" and row.missing_count > 0:
-            bar_cls = "bar-red"
-        elif severity_threshold == "recommended" and row.missing_pct > 20.0:
-            bar_cls = "bar-yellow"
-
-        rows.append(
-            [
-                _cell(row.tag_key, cls="mono"),
-                _cell(
-                    fmt_pct(row.present_pct),
-                    cls="num",
-                    bar_pct=row.present_pct,
-                    bar_cls=bar_cls,
-                ),
-                _cell(fmt_count(row.present_count), cls="num"),
-            ]
-        )
-    return rows
-
-
-_COV_HEADERS = [
-    _hdr("Tag Key", cls="cov-col-tag"),
-    _hdr("Coverage", cls="cov-col-coverage"),
-    _hdr("Present", "num", cls="cov-col-present"),
-]
-
-
-def build_tag_coverage_sections(data: TagCoverageFullData) -> list[dict[str, Any]]:
-    sections: list[dict[str, Any]] = []
-
-    sections.append(
-        _section(
-            "Tag Coverage & Key Inventory",
-            summary_cards=[_card(fmt_count(data.total_files), "Total Files")],
-        )
-    )
-
-    # Coverage tables: required, recommended, other tracked + unknown (tags to strip)
-    for group_name, group_data, severity in [
-        ("Required Tags", data.required_coverage, "required"),
-        ("Recommended Tags", data.recommended_coverage, "recommended"),
-        ("Other Tracked Tags", data.other_coverage, ""),
-    ]:
-        rows = _coverage_table_rows(group_data, severity)
-        sections.append(_section(group_name, tables=[_table(None, _COV_HEADERS, rows)]))
-
-    # Tags to strip — unknown keys shown with same coverage columns
-    if data.unknown_keys:
-        unk_rows = _coverage_table_rows(
-            [
-                TagCoverageRow(
-                    tag_key=row.tag_key_upper,
-                    present_count=row.file_count,
-                    present_pct=row.coverage_pct,
-                    missing_count=data.total_files - row.file_count,
-                    missing_pct=100.0 - row.coverage_pct,
-                )
-                for row in data.unknown_keys
-            ],
-            severity_threshold="",
-        )
-        sections.append(
-            _section(
-                f"Tags to Strip ({len(data.unknown_keys)})",
-                tables=[_table(None, _COV_HEADERS, unk_rows)],
-            )
-        )
-
-    # Alias consistency
-    if data.alias_usage:
-        alias_rows: list[list[dict[str, Any]]] = []
-        for row in data.alias_usage:
-            bar_cls = "bar-green" if row.consistency_pct >= 100.0 else "bar-red"
-            alias_rows.append(
-                [
-                    _cell(row.canonical_key, cls="mono"),
-                    _cell(row.alias_key, cls="mono"),
-                    _cell(
-                        fmt_pct(row.consistency_pct),
-                        bar_pct=row.consistency_pct,
-                        bar_cls=bar_cls,
-                    ),
-                ]
-            )
-        sections.append(
-            _section(
-                "Alias Consistency",
-                note="For files with the alias key, shows what % also have the canonical key set to the same value. Target: 100%.",
-                tables=[
-                    _table(
-                        None,
-                        [
-                            _hdr("Canonical Key"),
-                            _hdr("Alias Key"),
-                            _hdr("Consistency", cls="cov-col-coverage"),
-                        ],
-                        alias_rows,
-                    )
-                ],
-            )
-        )
-
-    # Full tag key inventory — collapsible, rendered as raw HTML
-    inv_table_rows: list[str] = []
-    for row in data.full_inventory:
-        cls = f"tag-{row.classification}"
-        bar_pct = min(max(row.coverage_pct, 0.0), 100.0)
-        inv_table_rows.append(
-            f"<tr>"
-            f'<td class="{cls}">{row.classification}</td>'
-            f'<td class="mono">{row.tag_key_upper}</td>'
-            f'<td class="cov-col-coverage">'
-            f'<span class="bar-container"><span class="bar-fill bar-green" style="width:{bar_pct:.1f}%"></span></span>'
-            f"{fmt_pct(row.coverage_pct)}</td>"
-            f'<td class="num">{fmt_count(row.file_count)}</td>'
-            f"</tr>"
-        )
-    inv_html = (
-        f'<details style="margin-top:1rem">'
-        f'<summary style="cursor:pointer;font-size:1.1rem;font-weight:600;padding:0.5rem 0">'
-        f"Full Tag Key Inventory ({len(data.full_inventory)} tags)"
-        f"</summary>"
-        f'<table style="width:100%;border-collapse:collapse;margin-top:0.5rem">'
-        f"<thead><tr>"
-        f"<th>Classification</th>"
-        f"<th>Tag Key</th>"
-        f'<th class="cov-col-coverage">Coverage</th>'
-        f'<th class="num">Present</th>'
-        f"</tr></thead>"
-        f"<tbody>{''.join(inv_table_rows)}</tbody>"
-        f"</table>"
-        f"</details>"
-    )
-    sections.append(_section("", text_blocks=[_text(inv_html)]))
-
-    return sections
 
 
 
@@ -1774,7 +1618,6 @@ SECTION_BUILDERS: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "overview": build_overview2_sections,
     "collection_issues": build_collection_issues_sections,
     "technical": build_technical_sections,
-    "tags": build_tag_coverage_sections,
     "key_inventory": build_key_inventory_sections,
     "artists": build_artists_sections,
     "genres": build_genres_sections,

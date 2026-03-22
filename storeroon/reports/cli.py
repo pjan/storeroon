@@ -11,7 +11,6 @@ CLI structure::
     python -m storeroon report summary
     python -m storeroon report overview      [--output terminal|json] [--output-dir PATH]
     python -m storeroon report technical     [--output ...] [--output-dir PATH]
-    python -m storeroon report tags          [--output ...] [--output-dir PATH]
     python -m storeroon report tag-formats   [--output ...] [--output-dir PATH] [--artist ARTIST]
     python -m storeroon report album-consistency [--output ...] [--output-dir PATH] [--artist ARTIST]
     python -m storeroon report ids           [--output ...] [--output-dir PATH] [--artist ARTIST]
@@ -180,7 +179,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         lyrics,
         overview,
         replaygain,
-        tag_coverage,
         technical,
     )
     from storeroon.reports.renderers.terminal import render_master_summary
@@ -198,11 +196,6 @@ def _cmd_summary(args: argparse.Namespace) -> int:
         summary.technical = technical.summary_data(conn)
     except Exception as exc:
         log.warning("Technical summary failed: %s", exc)
-
-    try:
-        summary.tags = tag_coverage.summary_data(conn, conf.tags)
-    except Exception as exc:
-        log.warning("Tag coverage summary failed: %s", exc)
 
     try:
         summary.artists = artists.summary_data(
@@ -326,38 +319,6 @@ def _cmd_technical(args: argparse.Namespace) -> int:
         render_technical(output_console, data)
     else:
         _write_json(args, conf, "technical", data)
-
-    conn.close()
-    return 0
-
-
-def _cmd_tags(args: argparse.Namespace) -> int:
-    """Execute ``report tags``."""
-    conf = _load_config(args)
-    if conf is None:
-        return 1
-
-    conn = _open_db(conf)
-    if conn is None:
-        return 0
-
-    if _check_empty(conn):
-        output_console.print(
-            "[yellow]The database is empty — run [bold]storeroon scan[/bold] first.[/yellow]"
-        )
-        conn.close()
-        return 0
-
-    from storeroon.reports.queries import tag_coverage
-    from storeroon.reports.renderers.terminal import render_tag_coverage
-
-    data = tag_coverage.full_data(conn, conf.tags)
-    fmt = _get_output_format(args)
-
-    if fmt == "terminal":
-        render_tag_coverage(output_console, data)
-    else:
-        _write_json(args, conf, "tags", data)
 
     conn.close()
     return 0
@@ -612,7 +573,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
         key_inventory,
         overview2,
         replaygain,
-        tag_coverage,
         technical,
     )
     from storeroon.reports.renderers.json_renderer import write_report
@@ -622,7 +582,6 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ("Overview", "overview", lambda: overview2.full_data(conn, aliases=conf.tags.aliases, canonical_keys=frozenset(conf.tags.required + conf.tags.recommended))),
         ("Collection issues", "collection_issues", lambda: collection_issues.full_data(conn, conf.tags)),
         ("Technical", "technical", lambda: technical.full_data(conn)),
-        ("Tag coverage", "tags", lambda: tag_coverage.full_data(conn, conf.tags)),
         ("Key inventory", "key_inventory", lambda: key_inventory.full_data(conn, conf.tags)),
         (
             "Artists",
@@ -659,7 +618,6 @@ _REPORT_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "overview": _cmd_overview,
     "collection-issues": _cmd_collection_issues,
     "technical": _cmd_technical,
-    "tags": _cmd_tags,
     "key-inventory": _cmd_key_inventory,
     "album-issues": _cmd_album_issues,
     "artists": _cmd_artists,
@@ -780,14 +738,6 @@ def build_report_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     _add_output_args(p_technical)
     _add_config_arg(p_technical)
-
-    # --- tags ---
-    p_tags = report_subs.add_parser(
-        "tags",
-        help="Tag coverage and key inventory",
-    )
-    _add_output_args(p_tags)
-    _add_config_arg(p_tags)
 
     # --- key-inventory ---
     p_key_inventory = report_subs.add_parser(

@@ -21,7 +21,6 @@ from storeroon.reports.models import (
     LyricsFullData,
     Overview2FullData,
     ReplayGainFullData,
-    TagCoverageFullData,
     TechnicalFullData,
 )
 
@@ -35,7 +34,6 @@ REPORT_DATA_CLASSES: dict[str, type] = {
     "overview": Overview2FullData,
     "collection_issues": CollectionIssuesFullData,
     "technical": TechnicalFullData,
-    "tags": TagCoverageFullData,
     "key_inventory": KeyInventoryFullData,
     "artists": ArtistsFullData,
     "genres": GenresFullData,
